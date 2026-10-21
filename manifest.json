@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "AEM Cloud Manager Companion",
+  "version": "0.4.9",
+  "description": "Manage Adobe Cloud Manager pipelines, environment variables, and environment status.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://cloudmanager.adobe.io/*",
+    "https://ims-na1.adobelogin.com/*"
+  ],
+  "action": {
+    "default_title": "AEM Cloud Manager Companion",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "minimum_chrome_version": "120",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; connect-src https://cloudmanager.adobe.io https://ims-na1.adobelogin.com; frame-ancestors 'none';"
+  }
+}

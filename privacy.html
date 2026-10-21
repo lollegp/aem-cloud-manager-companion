@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AEM Cloud Manager Companion · Privacy Policy</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<h1>AEM Cloud Manager Companion Privacy Policy</h1>
+<p>Effective October 21, 2026. This policy describes version 0.4.9 of the extension.</p>
+<h2>Purpose and information handled</h2>
+<p>The extension lets you view and manage Adobe Cloud Manager environments, pipelines, and runtime variables. It handles the Adobe Client ID, Organization ID, Program ID, OAuth scopes, Client Secret or manually supplied access token that you provide. It retrieves environment and pipeline information, execution details, and runtime variables from Adobe when you use these features. Commands and variable values you submit are sent to Adobe to carry out your requested actions.</p>
+<h2>Local storage and retention</h2>
+<p>Connection identifiers, scopes, environment aliases, environment ordering and visibility, and pipeline display preferences are stored locally in your Chrome profile. They are not encrypted by the extension. They remain until changed, removed, or the extension is uninstalled.</p>
+<p>Saving your Client Secret is optional and requires explicit consent. The saved value is encrypted with AES-256-GCM using a fixed key bundled with every copy of this extension and a fresh random nonce. <strong>This is obfuscation, not a secure vault: anyone with the extension code and saved data can decrypt it, including copies across Chrome profiles.</strong> No vault password or passkey is requested. This protection must not be relied on to keep a secret confidential from someone with access to your browser profile.</p>
+<p>A saved secret is retained until replaced, forgotten, or the extension is uninstalled. It is decrypted internally when an access token must be generated, including on first use after browser restart. The extension does not display or export the saved secret. No Adobe credential is bundled with the extension and no credential is synced through Chrome Sync.</p>
+<p>Access tokens and their expiry information remain in trusted-context Chrome session storage. This memory-backed storage clears when Chrome restarts or the extension is reloaded, updated, or disabled. The next API request generates a replacement token from the saved secret without an unlock prompt. There is no idle background polling. A secret entered for one-time generation is not saved, and its form field clears after credential operations.</p>
+<p>Runtime variable values are not persisted by the extension. Retrieved Cloud Manager data is held in the open page while it is used.</p>
+<h2>Migration from earlier versions</h2>
+<p>Earlier password-protected records remain unchanged until you explicitly replace or delete them. Re-enter your Adobe secret and save it with consent to enable passwordless renewal. If a previous unlocked secret remains in session memory, it can be converted after consent without re-entry. The extension does not silently remove password protection.</p>
+<p>An earlier plaintext saved secret is moved into temporary session storage and its active local record is removed. Settings offers conversion before restarting Chrome or reloading the extension. Forget also discards this temporary copy. Removing the active record does not securely erase historical disk remnants or backups.</p>
+<h2>Transmission and sharing</h2>
+<p>The Client ID, Client Secret, and requested scopes are sent over HTTPS to Adobe IMS at ims-na1.adobelogin.com to generate an access token. The access token, Client ID, Organization ID, program and resource identifiers, and requested actions or variable values are sent over HTTPS to cloudmanager.adobe.io. Adobe processes these requests under your Adobe agreement and its own privacy practices.</p>
+<p>The extension has no developer-operated backend, analytics, advertising, telemetry, or data sales. It does not send your credentials or Cloud Manager data to its developer or other recipients. Clicking an external documentation or support link opens that destination, which has its own privacy practices.</p>
+<h2>Your controls</h2>
+<ul>
+<li><strong>Clear token</strong> removes the access token and metadata but keeps the saved credential. The next API request can generate a new token automatically.</li>
+<li><strong>Forget saved secret</strong> deletes the saved credential and clears temporary migration data and the access token. Automatic renewal then stops until credentials are saved again.</li>
+<li>Edit connection settings and aliases in the extension. Uninstall it to remove its local settings and saved credential.</li>
+</ul>
+<p>These controls do not revoke credentials or tokens at Adobe and cannot cancel an API action already sent. To revoke or rotate credentials, use Adobe Developer Console or contact your Adobe administrator. The fixed bundled key does not protect credentials from someone who can read the saved data and extension code.</p>
+<h2>Permissions and Limited Use</h2>
+<p>The storage permission supports settings, optional saved credentials, and session credentials. Access to the two Adobe hosts supports authentication and Cloud Manager actions. The extension requests no browsing-history, all-sites, native-messaging, or content-script access.</p>
+<p>All user data is used only to provide the extension's stated Cloud Manager functionality. It is not used for advertising, sold, or made available for developer human review.</p>
+<h2>Questions</h2>
+<p>For privacy questions, use the developer contact or support channel published on this extension's Chrome Web Store listing. Never include credentials or tokens in a support request.</p>
+</main></body>
+</html>

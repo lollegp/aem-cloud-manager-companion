@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Cloud Manager · Connection</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body><main class="narrow">
+    <header><h1>Cloud Manager · Connection</h1><a href="https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/ims" target="_blank" rel="noopener noreferrer">Adobe OAuth docs ↗</a></header>
+    <div class="card">
+        <label for="clientId">Adobe API Client ID (x-api-key)</label><input id="clientId" autocomplete="off">
+        <label for="orgId">Adobe Organization ID (x-gw-ims-org-id)</label><input id="orgId" autocomplete="off">
+        <label for="programId">Cloud Manager Program ID</label><input id="programId" autocomplete="off">
+        <h2>Generate access token</h2>
+        <p>Credentials are sent only to Adobe over HTTPS to generate tokens and manage Cloud Manager. Tokens remain in memory for this browser session. <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
+        <p>Use your Adobe Developer Console OAuth Server-to-Server credential.</p>
+        <label for="clientSecret">Adobe Client Secret</label><input id="clientSecret" type="password" autocomplete="off" spellcheck="false" placeholder="Enter your own Client Secret">
+        <label for="oauthScopes">OAuth scopes</label><input id="oauthScopes" autocomplete="off" placeholder="Comma-separated scopes from Adobe Developer Console">
+        <fieldset>
+            <legend>Remember credentials</legend>
+            <p id="vaultStatus" role="status"></p>
+            <p id="migrationNotice" hidden role="status">A previous secret is available in temporary session memory. Leave Client Secret empty, consent below, and save to convert it to the new format before restarting Chrome or reloading the extension.</p>
+            <p>Save your secret to renew access tokens automatically, including after restarting Chrome. No vault password, passkey, or external software is required.</p>
+            <p><strong>Storage protection:</strong> the secret is encrypted with a fixed key bundled with this extension. Anyone with the extension code and your saved data can decrypt it. This is obfuscation, not a secure password vault. Do not use it on an untrusted or shared Chrome profile.</p>
+            <label class="remember-secret"><input id="rememberSecret" type="checkbox"> I understand this limitation and agree to save my Adobe Client Secret on this device.</label>
+            <div class="actions"><button id="saveVault">Save secret</button><button id="forgetSecret" class="danger">Forget saved secret</button></div>
+        </fieldset>
+        <p class="muted">Save secret first to enable automatic renewal. Generate uses an entered secret once, or the saved credential when the field is empty. The secret field clears after credential operations. Tokens renew when an API request needs them; there is no background polling.</p>
+        <div class="actions"><button id="generate" class="primary">Generate access token</button><button id="clear" class="danger">Clear token</button><button id="test">Test connection</button></div>
+        <p id="tokenStatus" class="muted"></p>
+        <p id="feedback" role="status" aria-live="polite"></p>
+    </div>
+    <details class="card">
+        <summary>Manual access token</summary>
+        <label for="token">Adobe OAuth access token</label><input id="token" type="password" autocomplete="off" placeholder="Paste a short-lived bearer token">
+        <div class="actions"><button id="save">Save connection</button></div>
+        <p>Alternatively, paste an existing access token from Adobe Developer Console.</p>
+    </details>
+    <div class="card">
+        <h2>First-time setup</h2>
+        <ol>
+            <li>Open your Cloud Manager API integration in Adobe Developer Console and select its OAuth Server-to-Server credential.</li>
+            <li>Copy the Client ID, Client Secret, and scopes. Enter your Organization ID and Cloud Manager Program ID above.</li>
+            <li>To enable automatic renewal, review the storage limitation, select the consent checkbox, and click <strong>Save secret</strong>. Then click <strong>Test connection</strong>.</li>
+        </ol>
+        <p>No redirect URL or Adobe sign-in window is required. Access depends on the integration's Cloud Manager product profiles.</p>
+        <p>Tokens stay in Chrome session storage. Missing or expiring tokens renew automatically using your saved secret. Clear token keeps the saved secret; Forget saved secret disables renewal and clears the token. Each user supplies their own authorized Adobe credential; none is included in the extension package.</p>
+    </div>
+</main><script type="module" src="options.js"></script></body>
+</html>
