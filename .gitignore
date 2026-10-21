@@ -1,0 +1,15 @@
+# Generated extension packages and local browser artifacts
+dist/
+.playwright-mcp/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
