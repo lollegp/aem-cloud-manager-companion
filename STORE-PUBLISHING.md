@@ -1,6 +1,6 @@
 # Chrome Web Store publication
 
-Version 0.4.9 ships without Adobe credentials. Each user may supply and save their own credential for automatic token generation after restart.
+Version 0.5.5 ships without Adobe credentials. Each user may supply and save their own credential for automatic token generation after restart.
 
 **Security limitation:** AES-256-GCM uses a fixed key bundled with the extension. Anyone with the code and saved record can decrypt the secret. This is obfuscation, not strong credential protection, and must not be presented as a secure vault or guaranteed Chrome Web Store compliance. Chrome's secure-handling requirements still apply; transparent disclosure alone does not establish compliance. This package has not been submitted or approved.
 
@@ -13,7 +13,7 @@ Version 0.4.9 ships without Adobe credentials. Each user may supply and save the
 5. Justify `storage` for local settings, optional saved credentials, and session tokens. Justify the IMS host for token generation and the Cloud Manager host for resource operations. No remote code, broad host permissions, native helper, or local OAuth server is required.
 6. Supply screenshots, listing assets, and accurate reviewer instructions. Use a dedicated least-privilege test integration through the Store's private reviewer process if requested; never put credentials in the package, public listing, or this repository. Clearly describe any access restrictions.
 7. Verify the packaged extension in Chrome 120 or newer with an authorized nonproduction Adobe integration. Check live IMS token generation, Cloud Manager access, silent renewal after browser restart, expiry, concurrent requests, update migration, and Forget, and your organization's policy on handling Server-to-Server secrets in a browser. Adobe states Server-to-Server token generation must run on a secure backend; fixed-key local storage does not resolve that documented requirement.
-8. Package only extension runtime files: `manifest.json`, `background.js`, `credentials.js`, `vault.js`, `auth.js`, `api.js`, `options.html`, `options.js`, `popup.html`, `popup.js`, `pipeline.js`, `history.js`, `style.css`, and `privacy.html`. Keep tests, internal plans, and any local credentials out of the upload.
+8. Package only extension runtime files: `manifest.json`, `background.js`, `credentials.js`, `vault.js`, `auth.js`, `api.js`, `options.html`, `options.js`, `popup.html`, `popup.js`, `pipeline.js`, `history.js`, `cache.js`, `style.css`, and `privacy.html`. Keep tests, internal plans, and any local credentials out of the upload.
 
 ## Security behavior to disclose
 

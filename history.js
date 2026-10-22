@@ -30,7 +30,7 @@ export function createHistoryPager(path, fetchPage = request) {
     };
 }
 
-export function historyPanel(path, signal) {
+export function historyPanel(path, signal, onLatest, onLoading) {
     const panel = document.createElement('details');
     panel.className = 'pipeline-history';
     const summary = document.createElement('summary');
@@ -47,10 +47,12 @@ export function historyPanel(path, signal) {
     list.append(rows, status, more);
     panel.append(summary, list);
     const pager = createHistoryPager(path, next => request(next, 'GET', undefined, {signal}));
-    let loading = false, started = false, failed = false;
+    let loading = false, started = false, failed = false, firstPage = true;
     async function load() {
         if (loading || pager.done || signal.aborted || !panel.isConnected) return;
         loading = true; started = true; failed = false;
+        list.setAttribute('aria-busy','true');
+        onLoading?.(true);
         more.disabled = true; status.textContent = 'Loading history...';
         try {
             const entries = await pager.load();
@@ -69,11 +71,16 @@ export function historyPanel(path, signal) {
             status.textContent = pager.done ? (rows.childElementCount ? 'End of history' : 'No executions found.') : 'Scroll for older executions';
             more.hidden = pager.done;
             more.textContent = 'Load more';
+            if (firstPage) { firstPage = false; await onLatest?.(entries[0] || null); }
         } catch (error) {
             if (signal.aborted || !panel.isConnected) return;
             failed = true; status.textContent = `History unavailable: ${error.message}`;
             more.textContent = 'Retry history';
-        } finally { loading = false; more.disabled = false; }
+        } finally {
+            loading = false; more.disabled = false;
+            list.setAttribute('aria-busy','false');
+            onLoading?.(false);
+        }
     }
     panel.addEventListener('toggle', () => { if (panel.open && !started) load(); });
     list.addEventListener('scroll', () => {

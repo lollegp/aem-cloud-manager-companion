@@ -1,0 +1,126 @@
+// Mocked Chrome/Adobe traffic: verify the cache by counting actual UI requests.
+export default async function cacheBrowserSmoke(page, files) {
+    const checks = [], errors = [], calls = [];
+    const check = (ok, name) => { if (!ok) throw new Error(name); checks.push(name); };
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('https://cache-companion.test/**', route => {
+        const name = new URL(route.request().url()).pathname.slice(1);
+        return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:files[name]||''});
+    });
+    await page.addInitScript(() => {
+        const listeners = [];
+        const local = JSON.parse(sessionStorage.getItem('localFixture') || '{"clientId":"client","orgId":"org","programId":"1","oauthScopes":"scope"}');
+        const session = JSON.parse(sessionStorage.getItem('sessionFixture') || '{"token":"token"}');
+        window.fixtureLocal = local;
+        window.fixtureSession = session;
+        const area = (data, key) => ({
+            get: async keys => structuredClone(Object.fromEntries(keys.filter(k=>k in data).map(k=>[k,data[k]]))),
+            set: async values => { Object.assign(data,structuredClone(values)); sessionStorage.setItem(key,JSON.stringify(data)); if(key === 'localFixture') listeners.forEach(fn=>fn(Object.fromEntries(Object.keys(values).map(k=>[k,{newValue:values[k]}])),'local')); },
+            remove: async keyToRemove => { delete data[keyToRemove]; sessionStorage.setItem(key,JSON.stringify(data)); }
+        });
+        window.chrome = {storage:{local:area(local,'localFixture'),session:area(session,'sessionFixture'),onChanged:{addListener:fn=>listeners.push(fn)}},runtime:{openOptionsPage(){}}};
+        window.confirm = () => true;
+    });
+    let missingCurrent = false, shared = false, failExecution = false, delayExecution = false, pipelineStatus = 'BUSY', currentStatus = 'RUNNING', holdCatalog = false, holdAction = false, mutations = 0;
+    const pipeline = id => ({id,name:`Pipeline ${id}`,type:'CI_CD',status:pipelineStatus,phases:id === 'shared' ? [{type:'DEPLOY',environmentId:'1'},{type:'DEPLOY',environmentId:'2'}] : [{type:'DEPLOY',environmentId:id}]});
+    await page.route('https://cloudmanager.adobe.io/**', async route => {
+        const path = new URL(route.request().url()).pathname;
+        calls.push(path);
+        const send = (data,status=200) => route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)}).catch(()=>{});
+        if(route.request().method() !== 'GET') { mutations++; return send({}); }
+        if(holdCatalog && path.endsWith('/environments')) await new Promise(resolve=>setTimeout(resolve,200));
+        if(holdAction && path.endsWith('/pipeline/1')) await new Promise(resolve=>setTimeout(resolve,200));
+        if (path.endsWith('/environments')) return send({_embedded:{environments:[{id:'1',name:'Alpha',type:'dev'},{id:'2',name:'Beta',type:'prod'}]}});
+        if (path.endsWith('/pipelines')) return send({_embedded:{pipelines:[pipeline('1'),pipeline('2'),...(shared ? [pipeline('shared')] : [])]}});
+        if (path.includes('/pipeline/shared')) await new Promise(resolve => setTimeout(resolve,50));
+        if (delayExecution && path.endsWith('/execution')) await new Promise(resolve => setTimeout(resolve,200));
+        if (failExecution && path.endsWith('/pipeline/1/execution')) return send({message:'Forbidden'},403);
+        if (path.endsWith('/execution')) return missingCurrent ? send({message:'Pipeline Execution not found'},404) : send({id:'run-1',status:currentStatus,createdAt:'2026-10-22T10:00:00Z',_embedded:{stepStates:[]}});
+        if (path.endsWith('/execution/run-1')) return send({id:'run-1',status:'FINISHED',createdAt:'2026-10-22T10:00:00Z',finishedAt:'2026-10-22T11:00:00Z',_embedded:{stepStates:[]}});
+        if (path.endsWith('/executions')) return send({_embedded:{executions:[{id:'history-1',status:'FINISHED',createdAt:'2026-10-21T10:00:00Z'}]}});
+        return send(pipeline(path.split('/').at(-1)));
+    });
+    const ready = () => page.waitForFunction(() => !document.getElementById('refresh').disabled && !document.querySelector('[data-loading="true"]'));
+    const group = name => page.locator('.environment-group').filter({has:page.locator('.environment-summary').filter({hasText:name})});
+    await page.goto('https://cache-companion.test/popup.html'); await ready();
+    check(calls.length === 2, 'cold popup loads only environments and pipelines');
+    check(await page.locator('.environment-group[open]').count() === 0, 'accordions start collapsed');
+    check(await page.locator('.pipeline-row').count() === 0, 'collapsed environments do not build pipeline rows or history panels');
+    check(!calls.some(p=>p.includes('/execution')), 'opening popup does not read executions or history');
+    await page.reload(); await ready();
+    check(calls.length === 2, 'reopening popup uses session cache with zero API calls');
+    check((await page.locator('#message').innerText()).includes('Cached'), 'cache timestamp is shown honestly');
+    await group('Beta').evaluate(el => { window.untouchedGroup = el; });
+    await group('Alpha').locator(':scope > summary').click(); await ready();
+    check(calls.filter(p=>p.endsWith('/pipeline/1')).length === 1 && calls.filter(p=>p.endsWith('/pipeline/1/execution')).length === 1, 'expanding refreshes only the selected environment');
+    check(!calls.some(p=>p.includes('/pipeline/2')), 'collapsed environment has no pipeline detail or execution calls');
+    check(await group('Beta').evaluate(el => el === window.untouchedGroup), 'expansion does not rebuild another accordion');
+    check(!calls.some(p=>p.endsWith('/executions')), 'execution history is still unopened and unread');
+    const beforeRefresh = calls.length;
+    await page.locator('#refresh').click(); await ready();
+    check(calls.length === beforeRefresh + 4, 'Refresh reloads lists and only expanded environment details');
+    const beforeMissing = calls.length;
+    missingCurrent = true; pipelineStatus = 'IDLE'; currentStatus = 'FINISHED';
+    await group('Alpha').locator(':scope > summary').click();
+    await group('Alpha').locator(':scope > summary').click(); await ready();
+    check(calls.length === beforeMissing + 3 && !calls.some(p=>p.endsWith('/executions')), '404 current execution never triggers hidden history fetch');
+    check((await group('Alpha').innerText()).includes('Last execution'), 'last observed execution remains visible after 404');
+    check(await group('Alpha').locator('.execution-status.finished').count() === 1 && await group('Alpha').locator('.execution-status.running').count() === 0, 'reopening after BUSY to IDLE refreshes last execution pill from RUNNING to FINISHED');
+    check((await group('Alpha').locator('.execution-status').innerText()) === 'Last execution · Success' && (await group('Alpha').locator('.execution-status').getAttribute('title')).includes('FINISHED'), 'execution pill shows Success and retains raw API status in tooltip');
+    check(calls.at(-1).endsWith('/execution/run-1'), 'completed execution refresh uses the known run ID instead of history');
+    await group('Alpha').locator('.pipeline-history > summary').click();
+    await page.waitForFunction(() => document.querySelector('.history-entry'));
+    check(calls.filter(p=>p.endsWith('/executions')).length === 1, 'explicit history expansion fetches only its first page');
+    await page.reload(); await ready();
+    const afterReopen = calls.length;
+    check(await page.locator('.environment-group[open]').count() === 0, 'warm reopen does not auto-expand and refetch');
+    await page.getByRole('button',{name:'Environments',exact:true}).click(); await ready();
+    check(calls.length === afterReopen, 'Environments tab reuses cached catalog');
+    await page.getByRole('button',{name:'Pipelines',exact:true}).click(); await ready();
+    check(calls.length === afterReopen, 'tab switching does not refetch catalog');
+    await page.evaluate(() => { fixtureLocal.programId='other';sessionStorage.setItem('localFixture',JSON.stringify(fixtureLocal)); });
+    await page.reload(); await ready();
+    check(calls.length === afterReopen + 2 && calls.at(-1).includes('/program/other/'), 'program change cannot reuse another program cache');
+    missingCurrent = false;
+    await group('Alpha').locator(':scope > summary').click(); await ready();
+    failExecution = true;
+    await group('Alpha').locator(':scope > summary').click();
+    await group('Alpha').locator(':scope > summary').click(); await ready();
+    check((await group('Alpha').innerText()).includes('Execution refresh failed') && (await group('Alpha').innerText()).includes('Success'), 'failed refresh preserves last known execution and explains stale data');
+    failExecution = false; shared = true;
+    await page.locator('#refresh').click(); await ready();
+    await group('Alpha').locator(':scope > summary').click();
+    const sharedBefore = calls.filter(path=>path.endsWith('/pipeline/shared')).length;
+    await page.evaluate(() => document.querySelectorAll('.environment-group > summary').forEach(summary => summary.click()));
+    await ready();
+    check(calls.filter(path=>path.endsWith('/pipeline/shared')).length === sharedBefore + 1, 'concurrent environment expansions share pipeline requests');
+    await group('Alpha').locator(':scope > summary').click();
+    const storedBefore = await page.evaluate(() => JSON.stringify(fixtureSession));
+    delayExecution = true;
+    await group('Alpha').locator(':scope > summary').click();
+    await page.getByRole('button',{name:'Environments',exact:true}).click(); await ready();
+    await page.waitForTimeout(350);
+    check((await page.evaluate(() => JSON.stringify(fixtureSession))) === storedBefore, 'aborted environment reads cannot overwrite the session snapshot');
+    check(await page.locator('.pipeline-row').count() === 0, 'late environment reads cannot rebuild another tab');
+    delayExecution = false;
+    await page.getByRole('button',{name:'Pipelines',exact:true}).click(); await ready();
+    const beforeCatalogChange = await page.evaluate(() => JSON.stringify(fixtureSession));
+    holdCatalog = true;
+    await page.locator('#refresh').click();
+    await page.waitForFunction(() => document.getElementById('refresh').disabled);
+    await page.evaluate(() => chrome.storage.local.set({programId:'third'}));
+    await ready(); await page.waitForTimeout(250);
+    check((await page.evaluate(() => JSON.stringify(fixtureSession))) === beforeCatalogChange, 'connection change cancels catalog reads before any stale snapshot write');
+    check(await group('Alpha').getByRole('button',{name:'▶ Start',exact:true}).first().isDisabled(), 'stale configuration controls remain disabled after cancelled refresh');
+    holdCatalog = false;
+    await page.locator('#refresh').click(); await ready();
+    await group('Alpha').locator(':scope > summary').click(); await ready();
+    holdAction = true;
+    await group('Alpha').getByRole('button',{name:'▶ Start',exact:true}).first().click();
+    await page.waitForFunction(() => document.getElementById('refresh').disabled);
+    await page.evaluate(() => chrome.storage.local.set({programId:'fourth'}));
+    await ready(); await page.waitForTimeout(250);
+    check(mutations === 0, 'connection change during action revalidation cannot send a mutation');
+    check(errors.length === 0, 'no browser runtime errors');
+    return {checks};
+}

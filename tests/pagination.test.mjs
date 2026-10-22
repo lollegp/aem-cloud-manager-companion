@@ -6,7 +6,7 @@ import {embedded, link, safeAPIPath} from '../api.js';
 
 // Exercise the popup's actual loader without requiring a DOM or real credentials.
 const source = await readFile(new URL('../popup.js', import.meta.url), 'utf8');
-const loader = source.slice(source.indexOf('async function listAll('), source.indexOf('async function loadEnvironments('));
+const loader = source.slice(source.indexOf('async function listAll('), source.indexOf('async function loadEnvironmentPreferences('));
 function fixture(responses) {
     const paths = [];
     const context = {embedded, link, safeAPIPath, URL, setMessage() {}, request: async path => {

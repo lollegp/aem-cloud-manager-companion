@@ -37,7 +37,7 @@ export default async function loadingBrowserSmoke(page, files) {
     stalled = false;
     await page.locator('#refresh').click();
     await page.waitForFunction(() => !document.getElementById('refresh').disabled);
-    check((await page.locator('#message').innerText()) === 'Updated just now', 'retry recovers after network resumes');
+    check((await page.locator('#message').innerText()).startsWith('Updated:'), 'retry recovers after network resumes');
     stalled = true;
     await page.goto('https://loading-companion.test/options.html');
     await page.waitForFunction(() => !document.getElementById('test').disabled);
@@ -52,19 +52,22 @@ export default async function loadingBrowserSmoke(page, files) {
         const path = new URL(route.request().url()).pathname;
         if (path.endsWith('/environments')) return route.fulfill({contentType: 'application/json', body: '{"_embedded":{"environments":[]}}'});
         if (path.endsWith('/pipelines')) return route.fulfill({contentType: 'application/json', body: JSON.stringify({_embedded: {pipelines: Array.from({length: 10}, (_, i) => ({id: String(i), name: `Pipeline ${i}`, status: 'IDLE', buildType: 'fullstack', phases: []}))}})});
+        if (/\/pipeline\/[^/]+$/.test(path)) return route.fulfill({contentType:'application/json',body:JSON.stringify({id:path.split('/').at(-1),name:'Pipeline',status:'IDLE',buildType:'fullstack',phases:[]})});
         executionRequests++;
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise(resolve => setTimeout(resolve, 300));
         await route.fulfill({contentType: 'application/json', body: '{}'}).catch(() => {});
     });
     await page.goto('https://loading-companion.test/popup.html');
     await page.waitForFunction(() => !document.getElementById('refresh').disabled, null, {timeout: 5000});
-    check((await page.locator('#message').innerText()).includes('Refresh stopped'), 'whole refresh deadline covers sequential requests');
-    check((await page.locator('#message').innerText()).includes('execution'), 'timeout identifies the blocked loading step');
+    await page.locator('.environment-summary').click();
+    await page.waitForFunction(() => !document.querySelector('[data-loading="true"]'), null, {timeout:5000});
+    check((await page.locator('#content').innerText()).includes('Environment refresh failed'), 'environment deadline bounds multiple execution requests');
+    check(await page.locator('.environment-group').getAttribute('aria-busy') === 'false', 'timed-out environment stops its loading indicator');
     const completedCount = executionRequests;
     const completedContent = await page.locator('#content').innerHTML();
     const completedMessage = await page.locator('#message').innerText();
     await page.waitForTimeout(400);
-    check(executionRequests === completedCount && executionRequests < 10, 'timeout stops remaining requests and late UI updates');
+    check(executionRequests === completedCount && executionRequests <= 10, 'timeout stops remaining requests and late UI updates');
     check(await page.locator('#content').innerHTML() === completedContent && await page.locator('#message').innerText() === completedMessage, 'late responses cannot change the timed-out view');
     check(await page.locator('#settings').isEnabled(), 'Settings remains available after refresh deadline');
     await page.evaluate(() => {

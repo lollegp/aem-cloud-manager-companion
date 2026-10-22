@@ -163,3 +163,16 @@ test('caller cancellation signal does not disable the token renewal deadline', a
         await assert.rejects(request('/api/program/1/pipelines', 'GET', undefined, {signal: new AbortController().signal}), /timed out/);
     } finally { globalThis.chrome = originalChrome; AbortSignal.timeout = originalTimeout; }
 });
+
+test('mutation with an expected configuration rejects identity changes before fetch', async () => {
+    const {request} = await import('../api.js');
+    const originalChrome = globalThis.chrome, originalFetch = globalThis.fetch;
+    const expected = {clientId:'client',orgId:'org',programId:'1',oauthScopes:'scope'};
+    let reads = 0, writes = 0;
+    globalThis.chrome = {storage:{local:{get:async () => (++reads === 1 ? expected : {...expected,programId:'other'})},session:{get:async () => ({token:'token'})}}};
+    globalThis.fetch = async () => { writes++; return {ok:true,text:async ()=>'{}'}; };
+    try {
+        await assert.rejects(request('/api/program/1/pipeline/2/execution','PUT',undefined,{expectedConfig:expected}), /Connection settings changed/);
+        assert.equal(writes,0);
+    } finally { globalThis.chrome=originalChrome; globalThis.fetch=originalFetch; }
+});

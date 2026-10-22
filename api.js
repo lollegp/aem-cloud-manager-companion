@@ -54,9 +54,9 @@ async function renewToken(config, rejectedToken, signal) {
     return response.data.token;
 }
 
-export async function request(path, method = 'GET', data, {signal} = {}) {
+export async function request(path, method = 'GET', data, {signal,expectedConfig} = {}) {
     try {
-        return await performRequest(path, method, data, signal);
+        return await performRequest(path,method,data,signal,expectedConfig);
     } catch (error) {
         if (signal?.aborted) throw signal.reason;
         if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
@@ -66,11 +66,17 @@ export async function request(path, method = 'GET', data, {signal} = {}) {
     }
 }
 
-async function performRequest(path, method, data, signal) {
+async function performRequest(path,method,data,signal,expectedConfig) {
     signal?.throwIfAborted();
     const url = new URL(path, BASE);
     if (url.origin !== BASE || !url.pathname.startsWith('/api/')) throw new Error('Unexpected API URL.');
     const config = await abortable(settings(), signal);
+    const assertConfig = current => {
+        if (expectedConfig && ['clientId','orgId','programId','oauthScopes'].some(key => String(current[key] || '') !== String(expectedConfig[key] || ''))) {
+            throw new Error('Connection settings changed. Refresh before running an action.');
+        }
+    };
+    assertConfig(config);
     const {clientId, orgId, tokenClientId, tokenOrgId, tokenExpiresAt} = config;
     if (tokenClientId && tokenClientId !== clientId) throw new Error('Client ID changed. Generate a new access token in Settings.');
     if (tokenOrgId && tokenOrgId !== orgId) throw new Error('Organization ID changed. Generate a new access token in Settings.');
@@ -78,6 +84,9 @@ async function performRequest(path, method, data, signal) {
     let token = config.token;
     if (!token || (tokenExpiresAt && Date.now() >= tokenExpiresAt - 30000)) token = await renewToken(config, undefined, signal);
     const send = async () => {
+        signal?.throwIfAborted();
+        if (expectedConfig) assertConfig(await abortable(settings(),signal));
+        signal?.throwIfAborted();
         const headers = {'Authorization': `Bearer ${token}`, 'x-api-key': clientId, 'x-gw-ims-org-id': orgId, 'Accept': 'application/json'};
         if (data !== undefined) headers['Content-Type'] = 'application/json';
         const debug = debugEnabled(), requestId = ++debugSequence, started = Date.now();

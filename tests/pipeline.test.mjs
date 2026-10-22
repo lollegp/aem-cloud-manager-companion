@@ -107,3 +107,24 @@ test('custom environment order precedes new environments and keeps unassigned gr
     assert.deepEqual(model.orderEnvironments(envs, ['2','missing','1']).map(e => e.id), ['2','1','3']);
     assert.deepEqual(envs.map(e => e.id), ['1','2','3']);
 });
+
+test('execution pill labels distinguish actual run outcomes from pipeline idle/busy states', () => {
+    const labels = {FINISHED:'Success',ERROR:'Failed',FAILED:'Failed',RUNNING:'Running',CANCELLED:'Cancelled',CANCELLING:'Cancelling',NOT_STARTED:'Pending',WAITING:'Waiting'};
+    for (const [status,label] of Object.entries(labels)) assert.equal(model.executionStatusLabel({status}),label);
+    assert.equal(model.executionStatusLabel({status:'IDLE'}),'Unknown');
+    assert.equal(model.executionStatusLabel({status:'BUSY'}),'Unknown');
+});
+test('only active executions derive waiting labels from their waiting steps', () => {
+    const execution = {status:'RUNNING',_embedded:{stepStates:[{status:'WAITING',action:'approval'}]}};
+    assert.equal(model.executionStatusLabel(execution),'Waiting');
+    assert.equal(model.executionStatusLabel({...execution,status:'FINISHED'}),'Success');
+    assert.equal(model.executionStatusLabel({...execution,_embedded:{stepStates:[{status:'WAITING',action:'schedule'}]}}),'Waiting');
+});
+
+test('production pipeline header shows Waiting for a live approval even while API says BUSY', () => {
+    const execution = {status:'RUNNING',_embedded:{stepStates:[{action:'approval',status:'WAITING'}]}};
+    assert.equal(model.pipelineStatusLabel({status:'BUSY'},execution,true),'Waiting');
+    assert.equal(model.pipelineStatusLabel({status:'BUSY'},execution,false),'Running');
+    assert.equal(model.pipelineStatusLabel({status:'BUSY'},{status:'FINISHED',_embedded:execution._embedded},true),'Running');
+    assert.equal(model.pipelineStatusLabel({status:'IDLE'},null,true),'Idle');
+});

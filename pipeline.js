@@ -123,3 +123,21 @@ export function orderEnvironments(environments, order = []) {
         (ranks.get(String(a.id)) ?? Number.MAX_SAFE_INTEGER) - (ranks.get(String(b.id)) ?? Number.MAX_SAFE_INTEGER)
         || String(a.name || a.id).localeCompare(String(b.name || b.id)));
 }
+
+export function executionStatusLabel(execution) {
+    const status = String(execution?.status || '').toUpperCase();
+    if (['RUNNING','WAITING'].includes(status)) {
+        const waiting = (execution?._embedded?.stepStates || []).filter(step => step.status === 'WAITING');
+        if (waiting.some(step => step.action === 'approval')) return 'Waiting';
+        if (waiting.length) return 'Waiting';
+    }
+    return {FINISHED:'Success',ERROR:'Failed',FAILED:'Failed',RUNNING:'Running',CANCELLED:'Cancelled',CANCELLING:'Cancelling',NOT_STARTED:'Pending',WAITING:'Waiting'}[status] || 'Unknown';
+}
+
+
+export function pipelineStatusLabel(pipeline, execution, production = false) {
+    if (production && ['BUSY','WAITING'].includes(pipeline.status)
+        && ['RUNNING','WAITING'].includes(execution?.status)
+        && (execution._embedded?.stepStates || []).some(step => step.action === 'approval' && step.status === 'WAITING')) return 'Waiting';
+    return {BUSY:'Running',WAITING:'Waiting',IDLE:'Idle'}[pipeline.status] || pipeline.status || 'Unknown';
+}

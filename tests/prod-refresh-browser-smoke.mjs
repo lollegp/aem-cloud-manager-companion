@@ -1,0 +1,59 @@
+// Production ribbons must use fresh execution details, including approval waits.
+export default async function prodRefreshBrowserSmoke(page,files) {
+    const checks=[],errors=[],calls=[];
+    const check=(ok,name)=>{if(!ok)throw new Error(name);checks.push(name);};
+    page.on('pageerror',error=>errors.push(error.message));
+    await page.route('https://prod-refresh.test/**',route=>{
+        const name=new URL(route.request().url()).pathname.slice(1);
+        return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:files[name]||''});
+    });
+    await page.addInitScript(()=>{
+        const session={token:'token'};
+        window.chrome={storage:{local:{get:async()=>({clientId:'client',orgId:'org',programId:'1'})},session:{get:async keys=>Object.fromEntries(keys.filter(key=>key in session).map(key=>[key,session[key]])),set:async values=>Object.assign(session,values)}},runtime:{openOptionsPage(){}}};
+    });
+    let stage=0;
+    const pipeline=id=>({id,name:id,type:'CI_CD',status:id==='prod'&&stage>=2?'IDLE':'BUSY',phases:[{type:'DEPLOY',environmentId:id}]});
+    await page.route('https://cloudmanager.adobe.io/**',route=>{
+        const path=new URL(route.request().url()).pathname;calls.push(path);
+        const send=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
+        if(path.endsWith('/environments'))return send({_embedded:{environments:[{id:'dev',name:'Development',type:'dev'},{id:'prod',name:'Production',type:'prod'}]}});
+        if(path.endsWith('/pipelines'))return send({_embedded:{pipelines:[pipeline('dev'),pipeline('prod')]}});
+        if(path.endsWith('/pipeline/prod/execution')&&stage>=3)return send({message:'Pipeline Execution not found'},404);
+        if(path.endsWith('/pipeline/prod/executions'))return send({_embedded:{executions:[{id:'new-run',status:'FAILED',finishedAt:'2026-10-22T12:00:00Z'}]},_links:{next:{href:'/api/never-follow'}}});
+        if(path.endsWith('/pipeline/prod/execution'))return send({id:'run-prod',status:stage===2?'FINISHED':'RUNNING',_embedded:{stepStates:[]}});
+        if(path.endsWith('/pipeline/dev/execution'))return send({id:'run-dev',status:'RUNNING',_embedded:{stepStates:[]}});
+        if(path.endsWith('/execution/run-prod'))return send({id:'run-prod',status:stage===2?'FINISHED':'RUNNING',_embedded:{stepStates:stage===1?[{action:'approval',status:'WAITING',_links:{'http://ns.adobe.com/adobecloud/rel/pipeline/advance':{href:path+'/phase/1/step/1/advance'},'http://ns.adobe.com/adobecloud/rel/pipeline/cancel':{href:path+'/phase/1/step/1/cancel'}}}]:[]}});
+        return send(pipeline(path.split('/').at(-1)));
+    });
+    const ready=()=>page.waitForFunction(()=>!document.getElementById('refresh').disabled&&!document.querySelector('[data-loading="true"]'));
+    const prod=page.locator('.environment-group').filter({has:page.locator('.environment-summary').filter({hasText:'Production'})});
+    const dev=page.locator('.environment-group').filter({has:page.locator('.environment-summary').filter({hasText:'Development'})});
+    await page.goto('https://prod-refresh.test/popup.html');await ready();
+    await prod.locator(':scope > summary').click();await ready();
+    check((await prod.locator('.execution-status').innerText()).endsWith('Running'),'production ribbon initially shows Running');
+    check((await prod.locator('.pipeline-row > .line > .pill').innerText())==='Running','pipeline Busy label is displayed as Running');
+    await prod.locator(':scope > summary').click();stage=1;
+    await prod.locator(':scope > summary').click();await ready();
+    check((await prod.locator('.execution-status').innerText()).endsWith('Waiting'),'reopening production fetches detail and changes last execution ribbon to Waiting');
+    check((await prod.locator('.pipeline-row > .line > .pill').innerText())==='Waiting','waiting production approval overrides pipeline BUSY header');
+    check(await prod.getByRole('button',{name:'✓ Promote',exact:true}).isVisible()&&await prod.getByRole('button',{name:'✕ Reject',exact:true}).isVisible(),'Waiting production exposes approval and rejection actions');
+    check((await prod.locator('.execution-status').getAttribute('title')).includes('Approval or rejection required'),'Waiting tooltip explains the required decision');
+    await prod.locator(':scope > summary').click();stage=2;
+    await prod.locator(':scope > summary').click();await ready();
+    check((await prod.locator('.execution-status').innerText()).endsWith('Success'),'reopening production after approval completion refreshes ribbon to Success');
+    check(calls.filter(path=>path.endsWith('/execution/run-prod')).length===3,'every production expansion reads fresh execution details');
+    await dev.locator(':scope > summary').click();await ready();
+    check(!calls.some(path=>path.endsWith('/execution/run-dev')),'nonproduction execution avoids the extra production detail request');
+    check(!calls.some(path=>path.endsWith('/executions')),'production approval refresh never loads unopened history');
+    await prod.locator(':scope > summary').click();stage=3;
+    await prod.locator(':scope > summary').click();await ready();
+    check((await prod.locator('.execution-status').innerText()).endsWith('Failed'),'production discovers a newer failed execution without opening history');
+    check(calls.filter(path=>path.endsWith('/executions')).length===1,'missing current reads one latest summary only');
+    check(await prod.getByRole('button',{name:'✓ Promote',exact:true}).count()===0,'historical summary exposes no production approval');
+    await page.reload();await ready();
+    await prod.locator(':scope > summary').click();await ready();
+    check((await prod.locator('.execution-status').innerText()).endsWith('Failed'),'cold production expansion discovers last execution without a cached run');
+    check(calls.filter(path=>path.endsWith('/executions')).length===2&&!calls.some(path=>path.includes('never-follow')),'latest summary never follows pagination links');
+    check(errors.length===0,'no browser runtime errors');
+    return {checks};
+}

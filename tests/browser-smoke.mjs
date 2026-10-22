@@ -23,7 +23,13 @@ export default async function browserSmoke(page, files) {
                 set: async values => { Object.assign(local, values); localStorage.setItem('fixtureStorage', JSON.stringify(local)); },
                 remove: async key => { delete local[key]; localStorage.setItem('fixtureStorage', JSON.stringify(local)); }
             },
-            session: {get: async () => ({token: 'fixture-token'})}
+            session: {
+                get: async keys => {
+                    const data = JSON.parse(sessionStorage.getItem('cacheFixture') || '{"token":"fixture-token"}');
+                    return Object.fromEntries(keys.filter(key => key in data).map(key => [key,data[key]]));
+                },
+                set: async values => sessionStorage.setItem('cacheFixture',JSON.stringify({...JSON.parse(sessionStorage.getItem('cacheFixture') || '{"token":"fixture-token"}'),...values}))
+            }
         }, runtime: {openOptionsPage() {}}};
     });
     const envs = [{id: '1', name: 'Development', status: 'ready', type: 'dev'}, {id: '2', name: 'Production', status: 'ready', type: 'prod'}];
@@ -53,21 +59,27 @@ export default async function browserSmoke(page, files) {
         if (path.endsWith('/pipelines')) return send({_embedded: {pipelines: url.search ? pipelines.slice(2) : pipelines.slice(0, 2)}, _totalNumberOfItems: pipelines.length, _links: {next: {href: `/api/program/1/pipelines?start=${Number(url.searchParams.get('start') || 0) + 2}`}}});
         if (path.endsWith('/executions')) {
             historyRequests++;
-            if (url.searchParams.get('limit') === '1') return send({_embedded: {executions: emptyHistory ? [] : [{id: 'last-run', status: 'FINISHED', createdAt: '2026-10-21T10:00:00Z', _embedded: {stepStates: [{status: 'WAITING', action: 'approval', _links: {'http://ns.adobe.com/adobecloud/rel/pipeline/advance': {href: '/api/program/1/pipeline/21/execution/old/advance'}}}]}}]}});
+            if (noCurrent && path.includes('/pipeline/21/')) return send({_embedded: {executions: emptyHistory ? [] : [{id: 'last-run', status: 'FINISHED', createdAt: '2026-10-21T10:00:00Z', _embedded: {stepStates: [{status: 'WAITING', action: 'approval', _links: {'http://ns.adobe.com/adobecloud/rel/pipeline/advance': {href: '/api/program/1/pipeline/21/execution/old/advance'}}}]}}]}});
             const start = Number(url.searchParams.get('start') || 0);
             return send({_totalNumberOfItems: 40, _embedded: {executions: Array.from({length: 20}, (_, i) => ({id: String(start + i), status: 'FINISHED', createdAt: '2026-10-21T10:00:00Z'}))}, _links: {next: {href: path + `?start=${start + 20}&limit=20`}}});
         }
         if (path.endsWith('/variables')) return send({_embedded: {variables}});
         const p = pipelines.find(p => path.includes(`/pipeline/${p.id}`));
-        if (path.endsWith('/execution')) {
-            if (noCurrent && p.id === '21') return send({message: 'Pipeline Execution not found'}, 404);
+        if (path.endsWith('/execution') || /\/execution\/[^/]+$/.test(path)) {
+            if (path.endsWith('/execution') && noCurrent && p.id === '21') return send({message: 'Pipeline Execution not found'}, 404);
             const active = ['BUSY', 'WAITING'].includes(p.status);
             const base = `/api/program/1/pipeline/${p.id}/execution/${executionId}/phase/1/step/1`;
             return send({id: executionId, status: active ? 'RUNNING' : 'FINISHED', _embedded: {stepStates: active ? [{action: p.status === 'WAITING' ? 'approval' : 'build', status: p.status === 'WAITING' ? 'WAITING' : 'RUNNING', _links: {'http://ns.adobe.com/adobecloud/rel/pipeline/cancel': {href: base + '/cancel'}, 'http://ns.adobe.com/adobecloud/rel/pipeline/advance': {href: base + '/advance'}}}] : []}});
         }
         return p ? send(p) : send({message: 'Unexpected fixture request'}, 404);
     });
-    const ready = () => page.waitForFunction(() => !document.getElementById('refresh').disabled);
+    const ready = async () => {
+        await page.waitForFunction(() => !document.getElementById('refresh').disabled && !document.querySelector('[data-loading="true"]'));
+        while (await page.locator('.environment-group:not([open]) > summary').count()) {
+            await page.locator('.environment-group:not([open]) > summary').first().click();
+            await page.waitForFunction(() => !document.querySelector('[data-loading="true"]'));
+        }
+    };
     const tab = async name => { await page.getByRole('button', {name, exact: true}).click(); await ready(); };
     await page.goto('http://companion.test/popup.html');
     await ready();
@@ -174,17 +186,22 @@ export default async function browserSmoke(page, files) {
     await summary.click();
     assert(await production.evaluate(el => !el.open), 'environment sections collapse');
     await summary.click();
+    await ready();
     noCurrent = true;
     const historyBeforeFallback = historyRequests;
     await page.locator('#refresh').click(); await ready();
     const lastRow = production.locator('.pipeline-row[data-pipeline-id="21"]');
-    assert((await lastRow.innerText()).includes('Last execution last-run: FINISHED'), 'missing current execution displays last history entry');
+    assert(!(await lastRow.innerText()).includes('Execution details unavailable'), '404 does not display an execution error');
+    assert(historyRequests === historyBeforeFallback + 1, 'production 404 fetches one latest summary without opening history');
+    await lastRow.locator('.pipeline-history > summary').click();
+    await page.waitForFunction(() => document.querySelector('.pipeline-row[data-pipeline-id="21"] .history-entry'));
+    assert((await lastRow.innerText()).includes('Last execution last-run'), 'explicit history expansion supplies last execution summary');
     assert(await lastRow.locator('p[title="2026-10-21T10:00:00Z"]').count() === 1 && (await lastRow.innerText()).includes('(local time)'), 'last execution displays localized date and time with original timestamp tooltip');
-    assert(!(await lastRow.innerText()).includes('Execution details unavailable'), '404 is replaced with last execution summary');
-    assert(historyRequests === historyBeforeFallback + 1, 'fallback requests only one history page');
     assert(await lastRow.getByRole('button', {name: '✓ Promote', exact: true}).count() === 0 && await lastRow.getByRole('button', {name: '■ Stop', exact: true}).count() === 0, 'historical steps never expose live mutation controls');
     emptyHistory = true;
     await page.locator('#refresh').click(); await ready();
+    await lastRow.locator('.pipeline-history > summary').click();
+    await page.waitForFunction(() => document.querySelector('.pipeline-row[data-pipeline-id="21"] .history-list').textContent.includes('No executions found.'));
     assert((await lastRow.innerText()).includes('No previous executions found.'), 'pipeline without history shows empty state');
     await tab('Environments');
     assert(await page.getByRole('button', {name: 'Move up environment My Dev · Development', exact: true}).isDisabled(), 'first environment cannot move above the top');
@@ -218,6 +235,7 @@ export default async function browserSmoke(page, files) {
     await tab('Pipelines');
     assert(await page.locator('.environment-summary').filter({hasText: 'Production'}).count() === 1, 'unchecking visibility restores the environment');
     pipelines.splice(pipelines.findIndex(p => p.id === '14'), 1);
+    await page.locator('#refresh').click(); await ready();
     await tab('Environments');
     await visibility.check(); await ready();
     await page.getByRole('checkbox', {name: 'Hide My Dev · Development from Pipelines', exact: true}).check(); await ready();
