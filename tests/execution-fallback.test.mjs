@@ -15,12 +15,13 @@ function fixture(current, history) {
     });
     return {calls, run: (previous, pipeline = {}, production = false) => fn('1', {id:'2',...pipeline}, new AbortController().signal, previous, production)};
 }
-test('missing current execution uses previous summary without requesting history', async () => {
+test('missing current execution refreshes the cached summary from latest execution', async () => {
     const f = fixture(async () => { throw new Error('404 Pipeline Execution not found'); }, {_embedded: {executions: [{id: 'last', status: 'FINISHED'}]}, _links: {next: {href: '/api/ignored'}}});
     const result = await f.run({execution:{id:'last',status:'FINISHED'}});
     assert.equal(result.historical, true);
     assert.equal(result.execution.id, 'last');
-    assert.equal(f.calls.length, 0);
+    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls[0][0],'/api/program/1/pipeline/2/executions?start=0&limit=1');
 });
 test('current execution remains current and errors other than 404 do not fetch history', async () => {
     const f = fixture(async () => ({id: 'current'}));
@@ -42,9 +43,9 @@ test('a completed pipeline refreshes its previously running execution by ID afte
     const result = await f.run({execution:{id:'last',status:'RUNNING'}});
     assert.equal(result.execution.status,'FINISHED');
     assert.equal(result.historical,true);
-    assert.equal(f.calls.length,1);
+    assert.equal(f.calls.length,2);
     assert.equal(f.calls[0][0],'/api/program/1/pipeline/2/execution/last');
-    assert.ok(!f.calls.some(call => call[0].includes('/executions')));
+    assert.equal(f.calls[1][0],'/api/program/1/pipeline/2/executions?start=0&limit=1');
 });
 
 
@@ -87,4 +88,11 @@ test('production latest lookup accepts an empty execution list', async () => {
     const f = fixture(async () => null,{_embedded:{executions:[]}});
     assert.equal((await f.run(undefined,{},true)).execution,null);
     assert.equal(f.calls.length,1);
+});
+test('nonproduction expansion also discovers latest execution without opening history', async () => {
+    const f = fixture(async () => { throw new Error('404 Pipeline Execution not found'); }, {_embedded:{executions:[{id:'last-dev',status:'FINISHED'}]}});
+    const result = await f.run(undefined,{},false);
+    assert.equal(result.execution.id,'last-dev');
+    assert.equal(result.historical,true);
+    assert.equal(f.calls[0][0],'/api/program/1/pipeline/2/executions?start=0&limit=1');
 });

@@ -28,10 +28,10 @@ export function projectExecution(execution) {
 }
 function projectSnapshot(snapshot) {
     return {version:1,updatedAt:snapshot.updatedAt || 0,
-        environments:(snapshot.environments || []).map(env => pick(env, ['id','name','type','status','region'])),
+        environments:(snapshot.environments || []).map(env => pick(env, ['id','name','type','status','region','variableUpdateStatus','variableUpdateObserved','variableUpdateStartedAt'])),
         pipelines:(snapshot.pipelines || []).map(projectPipeline),
         executions:Object.fromEntries(Object.entries(snapshot.executions || {}).map(([id, record]) => [id, {
-            updatedAt:record.updatedAt || 0, historical:!!record.historical, missing:!!record.missing, stale:!!record.stale,
+            updatedAt:record.updatedAt || 0, historical:!!record.historical, missing:!!record.missing, historyChecked:!!record.historyChecked, stale:!!record.stale,
             execution:projectExecution(record.execution)
         }]))};
 }

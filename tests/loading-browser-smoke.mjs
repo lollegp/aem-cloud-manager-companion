@@ -37,10 +37,11 @@ export default async function loadingBrowserSmoke(page, files) {
     stalled = false;
     await page.locator('#refresh').click();
     await page.waitForFunction(() => !document.getElementById('refresh').disabled);
-    check((await page.locator('#message').innerText()).startsWith('Updated:'), 'retry recovers after network resumes');
+    check((await page.locator('#message').innerText()).startsWith('Catalog updated'), 'retry recovers after network resumes');
     stalled = true;
     await page.goto('https://loading-companion.test/options.html');
     await page.waitForFunction(() => !document.getElementById('test').disabled);
+    await page.locator('.advanced-settings > summary').click();
     await page.locator('#test').click();
     await page.waitForFunction(() => !document.getElementById('test').disabled, {timeout: 5000});
     check((await page.locator('#feedback').innerText()).includes('timed out'), 'Settings connection test times out');
@@ -67,7 +68,7 @@ export default async function loadingBrowserSmoke(page, files) {
     const completedContent = await page.locator('#content').innerHTML();
     const completedMessage = await page.locator('#message').innerText();
     await page.waitForTimeout(400);
-    check(executionRequests === completedCount && executionRequests <= 10, 'timeout stops remaining requests and late UI updates');
+    check(executionRequests === completedCount && executionRequests <= 20, 'timeout stops remaining current and latest-run requests and late UI updates');
     check(await page.locator('#content').innerHTML() === completedContent && await page.locator('#message').innerText() === completedMessage, 'late responses cannot change the timed-out view');
     check(await page.locator('#settings').isEnabled(), 'Settings remains available after refresh deadline');
     await page.evaluate(() => {

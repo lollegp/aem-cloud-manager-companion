@@ -64,7 +64,12 @@ export default async function authBrowserSmoke(page, files) {
     });
     await page.route('https://cloudmanager.adobe.io/**', route => { apiRequests++; return route.fulfill({contentType: 'application/json', body: '{"_embedded":{"environments":[]}}'}); });
     const ready = () => page.waitForFunction(() => !document.getElementById('generate').disabled);
-    const click = async id => { await page.locator(`#${id}`).click(); await ready(); };
+    const click = async id => {
+        if (['saveVault','forgetSecret','generate','test','clear','save'].includes(id) && !await page.locator('.advanced-settings').evaluate(el=>el.open)) await page.locator('.advanced-settings > summary').click();
+        await page.locator(`#${id}`).click(); await ready();
+    };
+    await page.goto('https://auth-companion.test/reset');
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
     await page.goto('https://auth-companion.test/options.html'); await ready();
     check(await page.locator('#vaultPassword, #confirmPassword, #unlockVault, #lockVault').count() === 0, 'password and lock controls removed');
     check(!await page.locator('#rememberSecret').isChecked(), 'saving requires explicit opt-in');
@@ -122,7 +127,7 @@ export default async function authBrowserSmoke(page, files) {
     await page.locator('#clientSecret').fill('fixture-secret'); await click('generate');
     check(await page.locator('#clientSecret').inputValue() === '', 'one-time input cleared');
     check(await page.evaluate(() => !JSON.stringify(fixtureLocal).includes('fixture-secret') && !JSON.stringify(fixtureSession).includes('fixture-secret')), 'one-time secret not retained');
-    await click('clear'); await page.locator('summary').click();
+    await click('clear'); await page.locator('.manual-token > summary').click();
     await page.locator('#token').fill('manual-token'); await click('save');
     check(await page.evaluate(() => fixtureSession.token === 'manual-token' && !fixtureSession.tokenExpiresAt), 'manual token supported');
     await page.evaluate(() => chrome.storage.local.set({credentialVault: {version: 1, id: 'old', clientId: 'fixture-client', orgId: 'org', ciphertext: 'legacy-encrypted'}}));
@@ -131,6 +136,26 @@ export default async function authBrowserSmoke(page, files) {
     check(await page.evaluate(() => fixtureLocal.credentialVault.version === 1), 'old vault remains until replaced');
     await page.locator('#clientSecret').fill('fixture-secret'); await page.locator('#rememberSecret').check(); await click('saveVault');
     check(await page.evaluate(() => fixtureLocal.credentialVault.version === 2), 'old vault replaced after explicit save');
+    // The primary flow composes existing operations without implicit storage.
+    page.once('dialog', dialog => dialog.accept()); await click('forgetSecret');
+    await page.locator('#clientSecret').fill('fixture-secret');
+    const beforeConnect = apiRequests;
+    await click('connect');
+    check((await page.locator('#feedback').innerText()).includes('Connected to program 1'), 'Connect verifies Cloud Manager access');
+    check(apiRequests === beforeConnect + 1, 'Connect performs one verification request');
+    check(await page.evaluate(() => !fixtureLocal.credentialVault && !!fixtureSession.token), 'Connect without consent does not save the secret');
+    check(await page.locator('#clientSecret').inputValue() === '', 'Connect clears one-time secret');
+    await page.locator('#clientSecret').fill('fixture-secret'); await page.locator('#rememberSecret').check();
+    await click('connect');
+    check(await page.evaluate(() => fixtureLocal.credentialVault.version === 2), 'Connect saves with explicit consent');
+    check(!await page.locator('#rememberSecret').isChecked(), 'Connect resets consent after saving');
+    const savedId = await page.evaluate(() => fixtureLocal.credentialVault.id);
+    await page.locator('#rememberSecret').check(); await click('connect');
+    check((await page.locator('#feedback').innerText()).includes('Connected') && await page.evaluate(() => fixtureLocal.credentialVault.id) === savedId, 'Connect reuses a saved credential with empty input and checked consent');
+    await page.route('https://cloudmanager.adobe.io/**', route => route.fulfill({status:403,contentType:'application/json',body:'{"message":"Access denied"}'}));
+    await click('connect');
+    check((await page.locator('#feedback').innerText()).includes('Connection failed') && !(await page.locator('#feedback').innerText()).includes('verified'), 'Connect reports API failure rather than token generation as success');
+    check(await page.locator('#connect').isEnabled(), 'Connect recovers controls after API failure');
     check(errors.length === 0, `no browser runtime errors: ${errors.join(', ')}`);
     return {checks, tokenRequests, apiRequests};
 }

@@ -62,6 +62,33 @@ perform(async () => {
 
 for (const key of ['clientId', 'orgId']) $(key).addEventListener('input', clearSensitiveInputs);
 
+// Capture the entered secret before storage events clear sensitive inputs.
+$('connect').addEventListener('click', () => perform(async () => {
+    const config = values(), secret = $('clientSecret').value;
+    let saved = false;
+    try {
+        validate(config);
+        feedback('Connecting to Adobe...');
+        if ($('rememberSecret').checked) {
+            const existing = secret ? null : await credential('status');
+            const reuse = existing?.saved && existing.clientId === config.clientId && existing.orgId === config.orgId;
+            if (!reuse) {
+                await credential('saveVault', {config, secret, consent: true});
+                saved = true;
+            }
+            $('rememberSecret').checked = false;
+            await showVault();
+        }
+        await credential('generate', {config, secret: saved ? '' : secret});
+        await showToken();
+        feedback('Verifying Cloud Manager access...');
+        await request(pathFor(config.programId, '/environments'), 'GET', undefined, {expectedConfig: config});
+        feedback(`Connected to program ${config.programId}. Cloud Manager access verified.`, true);
+    } catch (error) {
+        throw new Error(`${saved ? 'Credential saved. ' : ''}Connection failed: ${error.message}`);
+    } finally { clearSensitiveInputs(); }
+}));
+
 $('saveVault').addEventListener('click', () => perform(async () => {
     try {
         await credential('saveVault', {config: values(), secret: $('clientSecret').value,

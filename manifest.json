@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AEM Cloud Manager Companion",
-  "version": "0.5.5",
+  "version": "0.6.1",
   "description": "Manage Adobe Cloud Manager pipelines, environment variables, and environment status.",
   "permissions": [
     "storage"

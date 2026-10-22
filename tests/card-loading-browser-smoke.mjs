@@ -68,7 +68,7 @@ export default async function cardLoadingBrowserSmoke(page, files) {
         await page.locator('.environment-summary').filter({hasText:'Other'}).click();
         await page.waitForFunction(()=>!document.querySelector('[data-loading="true"]'));
         await page.evaluate(()=>{window.confirm=()=>true;});
-        await page.locator('.pipeline-row[data-pipeline-id="3"]').getByRole('button',{name:'▶ Start',exact:true}).click();
+        await page.locator('.pipeline-row[data-pipeline-id="3"]').getByRole('button',{name:'Start',exact:true}).click();
         await page.waitForFunction(()=>document.getElementById('refresh').disabled);
         check(await page.locator('.pipeline-row[data-pipeline-id="3"]').getAttribute('aria-busy') === 'true','pipeline mutation and revalidation also show a card loader');
         finishSecondHistory();

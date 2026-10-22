@@ -11,7 +11,7 @@ export default async function browserSmoke(page, files) {
         return route.fulfill({status: files[name] || name === 'reset' ? 200 : 404, contentType: name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html', body: files[name] || ''});
     });
     await page.goto('http://companion.test/reset');
-    await page.evaluate(() => localStorage.clear());
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
     await page.addInitScript(() => {
         window.fixtureDialogs = [];
         window.fixtureConfirm = false;
@@ -40,13 +40,24 @@ export default async function browserSmoke(page, files) {
         {id: '13', name: 'CDN shared', status: 'WAITING', type: 'CDN_CONFIG'},
         {id: '14', name: 'Quality check', status: 'IDLE'}
     ].map(p => ({...p, phases: p.id === '14' ? [{type: 'BUILD'}] : [{type: 'DEPLOY', environmentId: '1'}, ...(p.id === '13' ? [{type: 'DEPLOY', environmentId: '2'}] : [])]}));
-    let historyRequests = 0, rejectNextApproval = false, executionId = '100', noCurrent = false, emptyHistory = false;
-    const variables = [{name: 'API_URL', value: 'https://example.test/current', type: 'string', service: 'publish'}, {name: 'SECRET', type: 'secretString', value: 'masked'}];
+    let historyRequests = 0, rejectNextApproval = false, executionId = '100', noCurrent = false, emptyHistory = false, failVariableWrite = false;
+    const variables = [{name: 'API_URL', value: `https://example.test/${'long-value-'.repeat(24)}`, type: 'string', service: 'publish'}, {name: 'SECRET', type: 'secretString', value: 'masked'}];
     await page.route('https://cloudmanager.adobe.io/**', async route => {
         const req = route.request(), url = new URL(req.url()), path = url.pathname;
         const send = (data, status = 200) => route.fulfill({status, contentType: 'application/json', body: JSON.stringify(data)});
         if (req.method() !== 'GET') {
             writes.push({path, method: req.method(), body: req.postDataJSON()});
+            if (path.endsWith('/variables')) {
+                if(failVariableWrite){failVariableWrite=false;return send({message:'System error'},500);}
+                for (const change of req.postDataJSON()) {
+                    const index = variables.findIndex(v => v.name === change.name && (v.service || '') === (change.service || ''));
+                    if (change.value === '') { if (index >= 0) variables.splice(index,1); }
+                    else if (index >= 0) variables[index] = {...variables[index],...change};
+                    else variables.push(change);
+                }
+                variables.forEach(variable=>variable.status='ready');
+                return send({_embedded:{variables:[{status:'updating'}]}});
+            }
             if (rejectNextApproval && path.includes('/pipeline/21/')) return send({message: 'Approval permission denied'}, 403);
             const p = pipelines.find(p => path.includes(`/pipeline/${p.id}/`));
             if (path.endsWith('/execution')) {
@@ -75,10 +86,11 @@ export default async function browserSmoke(page, files) {
     });
     const ready = async () => {
         await page.waitForFunction(() => !document.getElementById('refresh').disabled && !document.querySelector('[data-loading="true"]'));
-        while (await page.locator('.environment-group:not([open]) > summary').count()) {
-            await page.locator('.environment-group:not([open]) > summary').first().click();
+        while (await page.locator('.environment-group:not([open]) > .environment-summary').count()) {
+            await page.locator('.environment-group:not([open]) > .environment-summary').first().click();
             await page.waitForFunction(() => !document.querySelector('[data-loading="true"]'));
         }
+        while (await page.locator('.group-heading:not([open]) > summary').count()) await page.locator('.group-heading:not([open]) > summary').first().click();
     };
     const tab = async name => { await page.getByRole('button', {name, exact: true}).click(); await ready(); };
     await page.goto('http://companion.test/popup.html');
@@ -113,76 +125,119 @@ export default async function browserSmoke(page, files) {
     assert(await page.locator('.pipeline-kind.frontend').count() === 1, 'pipeline type remains determined by API after reopening');
     await tab('Variables');
     assert(await page.locator('#environment option').first().innerText() === 'My Dev · Development', 'variable selector shows alias');
-    await page.getByRole('button', {name: 'Edit', exact: true}).first().click();
-    assert(await page.getByLabel('Variable value', {exact: true}).inputValue() === variables[0].value, 'existing plain value prefilled');
-    assert(await page.getByLabel('Variable service').inputValue() === 'publish', 'existing service prefilled');
+    const variableEditor = page.locator('.variable-row').first();
+    assert(await variableEditor.getByLabel('Value for API_URL').inputValue() === variables[0].value, 'existing plain value prefilled');
+    assert(await variableEditor.getByLabel('Service for API_URL').inputValue() === 'publish', 'existing service prefilled');
+    const longValue=variableEditor.locator('.variable-preview-wrap');
+    assert(await longValue.getAttribute('data-tooltip')===variables[0].value,'full variable value is available in multiline tooltip');
+    assert(await longValue.locator('.variable-preview').evaluate(el=>getComputedStyle(el).textOverflow==='ellipsis'&&el.scrollWidth>el.clientWidth),'long variable value is visually truncated');
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'variable fields fit popup without horizontal overflow');
     await page.evaluate(() => { window.fixtureConfirm = false; });
-    await page.getByRole('button', {name: 'Save variable'}).click();
-    assert(await page.getByLabel('Variable value', {exact: true}).inputValue() === variables[0].value, 'cancelled save preserves draft');
+    assert(await page.getByRole('button', {name: 'Save changes'}).isDisabled(), 'save is disabled without pending changes');
+    assert(await variableEditor.getByLabel('Value for API_URL').inputValue() === variables[0].value, 'unchanged cancelled save preserves input');
     assert(writes.length === 0, 'cancelled save sends no mutation');
-    await page.getByRole('button', {name: 'Edit', exact: true}).nth(1).click();
-    assert(await page.getByLabel('Variable value', {exact: true}).inputValue() === '', 'secret value never prefilled');
-    assert(await page.getByLabel('Variable value', {exact: true}).getAttribute('type') === 'password', 'secret replacement masked');
+    const secretEditor = page.locator('.variable-row').filter({has:page.getByLabel('Name for SECRET')});
+    assert(await secretEditor.getByLabel('Value for SECRET').inputValue() === '', 'secret value never prefilled');
+    assert(await secretEditor.getByLabel('Value for SECRET').getAttribute('type') === 'password', 'secret replacement masked');
+    await variableEditor.locator(':scope > summary').click();
+    await variableEditor.getByLabel('Value for API_URL').fill('https://example.test/updated');
+    await page.getByRole('button', {name: 'Add variable'}).click();
+    const newRow = page.locator('.variable-row').first();
+    assert(await newRow.getByLabel('Name').inputValue()==='', 'new variable starts with empty fields at the top');
+    assert(await page.getByRole('button',{name:'Add variable'}).locator('svg').count()===1,'variable actions include SVG icons');
+    await page.getByRole('button',{name:'Add variable'}).click();
+    const draft = page.locator('.variable-row').first();
+    await draft.getByRole('button',{name:'Remove draft'}).click();
+    assert(await page.locator('.variable-row').count()===3,'unused variable drafts can be removed without an API call');
+    await newRow.getByLabel('Name').fill('NEW_VALUE');
+    await newRow.getByLabel('Value').fill('new');
+    await secretEditor.getByLabel('Remove SECRET').check();
+    await page.evaluate(() => { window.fixtureConfirm = true; });
+    await page.getByRole('button', {name: 'Save changes'}).click(); await ready();
+    assert(writes.length === 1 && Array.isArray(writes[0].body) && writes[0].body.length === 3, 'bulk edit, add, and remove use one confirmed raw-array PATCH batch');
+    assert(writes[0].body.some(v=>v.name==='SECRET'&&v.value===''), 'bulk deletion uses documented empty-value delete');
+    assert((await page.locator('.variable-row').allTextContents()).some(text=>text.includes('NEW_VALUE')), 'saved variable batch refreshes the editor');
+    await page.getByRole('button', {name: 'Add variable'}).click();
+    const rejectedRow=page.locator('.variable-row').first();
+    await rejectedRow.getByLabel('Name').fill('RETRY_ME');
+    await rejectedRow.getByLabel('Value').fill('value');
+    failVariableWrite=true;
+    await page.getByRole('button', {name: 'Save changes'}).click(); await ready();
+    assert((await page.locator('#message').innerText()).includes('Cloud Manager returned 500')&&(await page.locator('#message').innerText()).includes('Refresh before retrying'),'500 response explains validation checks and refresh before retry');
+    assert(await page.locator('.variable-row').first().getByLabel('Name').inputValue()==='RETRY_ME','failed variable save preserves draft');
+    await rejectedRow.getByRole('button',{name:'Remove draft'}).click();
+    variables.push({name:'RUNMODES',service:'author',type:'string',value:'author-mode'},{name:'RUNMODES',service:'publish',type:'string',value:'publish-mode'});
+    await page.getByRole('button',{name:'Refresh',exact:true}).click();await ready();
+    const authorRow=page.locator('.variable-row[data-original-name="RUNMODES"][data-original-service="author"]');
+    const publishRow=page.locator('.variable-row[data-original-name="RUNMODES"][data-original-service="publish"]');
+    await authorRow.locator(':scope > summary').click();
+    await authorRow.getByLabel('Value for RUNMODES').fill('updated-author');
+    await publishRow.getByLabel('Remove RUNMODES').check();
+    const beforeServiceSave=writes.length;
+    await page.getByRole('button',{name:'Save changes'}).click();await ready();
+    assert(writes.length===beforeServiceSave+1,'same variable name in separate services saves successfully');
+    assert(variables.some(v=>v.name==='RUNMODES'&&v.service==='author'&&v.value==='updated-author')&&!variables.some(v=>v.name==='RUNMODES'&&v.service==='publish'),'service-scoped edit and deletion affect only their selected services');
     await tab('Pipelines');
+    writes.splice(0);
     await page.evaluate(() => { window.fixtureConfirm = false; });
-    await page.locator('.environment-group').first().getByRole('button', {name: 'Start group'}).click();
+    await page.locator('.environment-group').first().getByRole('button', {name: 'Start eligible pipelines'}).click();
     assert(writes.length === 0, 'cancelled group action sends no mutation');
     await page.evaluate(() => { window.fixtureConfirm = true; });
-    await page.locator('.environment-group').first().getByRole('button', {name: 'Start group'}).click();
+    await page.locator('.environment-group').first().getByRole('button', {name: 'Start eligible pipelines'}).click();
     await ready();
     assert(writes.length === 2 && writes.every(w => w.path.endsWith('/execution')), 'group start only starts idle pipelines once');
     assert(await page.locator('.batch-results').innerText().then(t => t.includes('Permission denied') && t.includes('Start requested')), 'partial start failure remains visible');
     await page.evaluate(() => { window.fixtureConfirm = true; });
-    await page.locator('.environment-group').first().getByRole('button', {name: 'Stop group'}).click();
+    await page.locator('.environment-group').first().getByRole('button', {name: 'Stop running pipelines'}).click();
     await ready();
     const stops = writes.filter(w => w.path.endsWith('/cancel'));
     assert(stops.length === 3, 'group stop covers running and waiting pipelines');
     assert(stops.find(w => w.path.includes('/pipeline/13/')).body.approved === false, 'group stop rejects waiting approval correctly');
     assert(await page.evaluate(() => window.fixtureDialogs.at(-1).includes('Production')), 'shared pipeline confirmation includes other affected environment');
-    assert(await page.getByRole('button', {name: 'Stop group'}).first().isDisabled(), 'stop disabled after all group pipelines stop');
+    assert(await page.getByRole('button', {name: 'Stop running pipelines'}).first().isDisabled(), 'stop disabled after all group pipelines stop');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'popup fits 440px viewport');
     pipelines.push({id: '21', name: 'Production FE', status: 'WAITING', buildType: 'frontend', phases: [{type: 'DEPLOY', environmentId: '2'}]});
     pipelines.find(p => p.id === '13').status = 'WAITING';
     await page.locator('#refresh').click(); await ready();
     let production = page.locator('.environment-group').filter({has: page.locator('.environment-summary').filter({hasText: 'Production'})});
-    assert(await production.getByRole('button', {name: 'Promote waiting'}).isEnabled(), 'production group has waiting promotion action');
-    assert(await production.getByRole('button', {name: '✓ Promote', exact: true}).count() === 2, 'each production pipeline has individual promotion');
-    assert(await page.locator('.environment-group').first().getByRole('button', {name: '✓ Promote', exact: true}).count() === 0, 'shared development group does not duplicate production decisions');
+    assert(await production.getByRole('button', {name: 'Approve waiting deployments'}).isEnabled(), 'production group has waiting promotion action');
+    assert(await production.getByRole('button', {name: 'Approve deployment', exact: true}).count() === 2, 'each production pipeline has individual promotion');
+    assert(await page.locator('.environment-group').first().getByRole('button', {name: 'Approve deployment', exact: true}).count() === 0, 'shared development group does not duplicate production decisions');
     await page.evaluate(() => { window.fixtureConfirm = false; });
     const beforeCancel = writes.length;
-    await production.getByRole('button', {name: 'Promote waiting'}).click();
+    await production.getByRole('button', {name: 'Approve waiting deployments'}).click();
     assert(writes.length === beforeCancel, 'cancelled production promotion sends no mutation');
     await page.evaluate(() => { window.fixtureConfirm = true; });
     rejectNextApproval = true;
-    await production.getByRole('button', {name: 'Promote waiting'}).click(); await ready();
+    await production.getByRole('button', {name: 'Approve waiting deployments'}).click(); await ready();
     const promotionWrites = writes.slice(beforeCancel);
     assert(promotionWrites.length === 2 && promotionWrites.every(w => w.path.endsWith('/advance') && w.body.approved === true), 'group promotion targets waiting approvals of all types');
     assert((await page.locator('.batch-results').innerText()).includes('Approval permission denied'), 'partial production decision failure remains visible');
     rejectNextApproval = false;
-    await production.getByRole('button', {name: '✕ Reject', exact: true}).click(); await ready();
+    await production.getByRole('button', {name: 'Reject deployment', exact: true}).click(); await ready();
     assert(writes.at(-1).path.includes('/pipeline/21/') && writes.at(-1).body.approved === false, 'single rejection targets only selected pipeline');
     pipelines.find(p => p.id === '13').status = 'WAITING';
     pipelines.find(p => p.id === '21').status = 'WAITING';
     await page.locator('#refresh').click(); await ready();
     const beforeReject = writes.length;
-    await production.getByRole('button', {name: 'Reject waiting'}).click(); await ready();
+    await production.getByRole('button', {name: 'Reject waiting deployments'}).click(); await ready();
     assert(writes.slice(beforeReject).length === 2 && writes.slice(beforeReject).every(w => w.body.approved === false), 'group rejection rejects all waiting production approvals');
     pipelines.find(p => p.id === '21').status = 'WAITING';
     await page.locator('#refresh').click(); await ready();
     const beforeStale = writes.length;
     executionId = '999';
-    await production.getByRole('button', {name: '✓ Promote', exact: true}).click(); await ready();
+    await production.getByRole('button', {name: 'Approve deployment', exact: true}).click(); await ready();
     assert(writes.length === beforeStale, 'changed execution is never promoted from a stale confirmation');
     assert((await page.locator('.batch-results').innerText()).includes('execution changed'), 'stale production decision explains the skip');
-    await production.getByRole('button', {name: '✓ Promote', exact: true}).click(); await ready();
+    await production.getByRole('button', {name: 'Approve deployment', exact: true}).click(); await ready();
     assert(writes.length === beforeStale + 1 && writes.at(-1).path.includes('/pipeline/21/execution/999/') && writes.at(-1).body.approved === true, 'single promotion uses only the freshly reviewed execution');
     pipelines.find(p => p.id === '21').status = 'BUSY';
     await page.locator('#refresh').click(); await ready();
     const beforeStop = writes.length;
     executionId = '1000';
-    await production.getByRole('button', {name: '■ Stop', exact: true}).click(); await ready();
+    await production.getByRole('button', {name: 'Stop', exact: true}).click(); await ready();
     assert(writes.length === beforeStop, 'single stop cannot cancel a replacement execution');
-    const summary = production.locator(':scope > summary');
+    const summary = production.locator(':scope > .environment-summary');
     await summary.click();
     assert(await production.evaluate(el => !el.open), 'environment sections collapse');
     await summary.click();
@@ -192,12 +247,13 @@ export default async function browserSmoke(page, files) {
     await page.locator('#refresh').click(); await ready();
     const lastRow = production.locator('.pipeline-row[data-pipeline-id="21"]');
     assert(!(await lastRow.innerText()).includes('Execution details unavailable'), '404 does not display an execution error');
-    assert(historyRequests === historyBeforeFallback + 1, 'production 404 fetches one latest summary without opening history');
+    assert(historyRequests === historyBeforeFallback + 1, `production 404 fetches one latest summary without opening history (saw ${historyRequests-historyBeforeFallback})`);
     await lastRow.locator('.pipeline-history > summary').click();
     await page.waitForFunction(() => document.querySelector('.pipeline-row[data-pipeline-id="21"] .history-entry'));
-    assert((await lastRow.innerText()).includes('Last execution last-run'), 'explicit history expansion supplies last execution summary');
+    assert((await lastRow.locator('.pipeline-details').textContent()).includes('Last execution last-run'), 'explicit history expansion supplies last execution summary');
+    assert((await lastRow.locator('.pipeline-details').textContent()).includes('Pipeline availability:') && (await lastRow.locator('.pipeline-details').textContent()).includes('Execution checked:'), 'history refresh preserves availability and freshness metadata');
     assert(await lastRow.locator('p[title="2026-10-21T10:00:00Z"]').count() === 1 && (await lastRow.innerText()).includes('(local time)'), 'last execution displays localized date and time with original timestamp tooltip');
-    assert(await lastRow.getByRole('button', {name: '✓ Promote', exact: true}).count() === 0 && await lastRow.getByRole('button', {name: '■ Stop', exact: true}).count() === 0, 'historical steps never expose live mutation controls');
+    assert(await lastRow.getByRole('button', {name: 'Approve deployment', exact: true}).count() === 0 && await lastRow.getByRole('button', {name: 'Stop', exact: true}).count() === 0, 'historical steps never expose live mutation controls');
     emptyHistory = true;
     await page.locator('#refresh').click(); await ready();
     await lastRow.locator('.pipeline-history > summary').click();

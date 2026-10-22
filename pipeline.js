@@ -36,7 +36,7 @@ export function groupPipelines(pipelines, environments, order = []) {
 const kinds = {
     fullstack: {label: 'Full-Stack', icon: '▤', className: 'fullstack'},
     dispatcher: {label: 'WebTier', icon: '⇄', className: 'webtier'},
-    frontend: {label: 'FE', icon: '◈', className: 'frontend'},
+    frontend: {label: 'Front End', icon: '◈', className: 'frontend'},
     config: {label: 'CDN Config', icon: '☁', className: 'cdn'}
 };
 

@@ -23,10 +23,10 @@ test('aliases have separate keys for organization, program and environment', () 
 test('pipeline icons distinguish all four types; unknown types remain unknown', () => {
     assert.equal(typeof model.pipelineKind, 'function');
     const kinds = ['fullstack', 'dispatcher', 'frontend', 'config'].map(buildType => model.pipelineKind({buildType}));
-    assert.deepEqual(kinds.map(k => k.label), ['Full-Stack', 'WebTier', 'FE', 'CDN Config']);
+    assert.deepEqual(kinds.map(k => k.label), ['Full-Stack', 'WebTier', 'Front End', 'CDN Config']);
     assert.equal(new Set(kinds.map(k => k.icon)).size, 4);
     assert.equal(model.pipelineKind({type: 'CI_CD'}).label, 'Full-Stack');
-    assert.equal(model.pipelineKind({phases: [{type: 'BUILD', name: 'build', steps: [{action: 'build', type: 'frontend'}]}]}).label, 'FE');
+    assert.equal(model.pipelineKind({phases: [{type: 'BUILD', name: 'build', steps: [{action: 'build', type: 'frontend'}]}]}).label, 'Front End');
 });
 test('prefills plain variable values, including zero; never prefills secrets', () => {
     assert.equal(typeof model.variableEditValue, 'function');
@@ -71,13 +71,13 @@ test('waiting pipelines remain eligible for group stop', () => {
     assert.equal(model.canStopPipeline({status: 'IDLE'}), false);
 });
 test('recognizes API step options and ignores former manual type overrides', () => {
-    assert.equal(model.pipelineKind({phases: [{steps: [{name: 'build', options: {buildType: 'frontend'}}]}]}).label, 'FE');
-    assert.equal(model.pipelineKind({buildType: 'frontend'}, 'config').label, 'FE');
+    assert.equal(model.pipelineKind({phases: [{steps: [{name: 'build', options: {buildType: 'frontend'}}]}]}).label, 'Front End');
+    assert.equal(model.pipelineKind({buildType: 'frontend'}, 'config').label, 'Front End');
     assert.equal(model.pipelineKind({}, 'dispatcher').label, 'Type unavailable');
 });
 
 test('type ribbons recognize API type fields and specialized build options', () => {
-    for (const [type, label] of [['FULL_STACK', 'Full-Stack'], ['FRONT_END', 'FE'], ['WEB_TIER', 'WebTier'], ['CDN_CONFIG', 'CDN Config']]) {
+    for (const [type, label] of [['FULL_STACK', 'Full-Stack'], ['FRONT_END', 'Front End'], ['WEB_TIER', 'WebTier'], ['CDN_CONFIG', 'CDN Config']]) {
         assert.equal(model.pipelineKind({type}).label, label);
         assert.equal(model.pipelineKind({type: 'CI_CD', phases: [{type: 'BUILD', steps: [{options: {type}}]}]}).label, label);
     }
