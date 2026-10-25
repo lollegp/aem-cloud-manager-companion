@@ -35,7 +35,7 @@ After verifying the live deployment, use the actual public URLs:
 - Privacy: `privacy.html` under that root.
 - Support: `support.html` under that root.
 
-The page currently links to the source ZIP for unpacked installation. Add a Chrome Web Store install link only after a real listing exists. Keep release version, feature descriptions and privacy disclosures consistent with the extension.
+The public page describes Chrome Web Store installation and shows “Coming to the Chrome Web Store” while no listing URL is available. It provides no source ZIP or Developer mode installation instructions. After publication, replace the availability notice with an active link to the real listing and update the hero CTA and support guide as appropriate. Keep release version, feature descriptions and privacy disclosures consistent with the extension.
 
 ## Validation
 

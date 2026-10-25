@@ -1,9 +1,16 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cloud Manager · Connection</title><link rel="stylesheet" href="style.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png"><title>Cloud Manager · Connection</title><script src="theme.js"></script><link rel="stylesheet" href="style.css"></head>
 <body class="settings"><main class="narrow">
 <header><div><p class="eyebrow">CLOUD MANAGER COMPANION</p><h1>Connection</h1></div><a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></header>
 <p>Connect your Adobe Developer Console OAuth Server-to-Server credential to a Cloud Manager program.</p>
+<section class="appearance-settings" aria-labelledby="appearanceTitle">
+    <h2 id="appearanceTitle">Appearance</h2>
+    <label for="themePreference">Theme</label>
+    <div class="select-control"><select id="themePreference" aria-describedby="themeHelp"><option value="system">System (default)</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+    <p id="themeHelp" class="muted">System follows your computer’s light or dark theme. Your choice applies to all extension pages.</p>
+    <p id="themeFeedback" role="status" class="muted"></p>
+</section>
 <section class="connection-fields" aria-label="Adobe connection">
     <div class="grid">
         <div><label for="clientId">Client ID</label><input id="clientId" autocomplete="off" spellcheck="false"></div>

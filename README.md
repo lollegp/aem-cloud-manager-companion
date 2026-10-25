@@ -34,7 +34,7 @@ Without a saved secret, enter it for each generation or use **Manual access toke
 
 **Upgrade:** a previous password-protected record remains intact until replaced or deleted. Re-enter your Adobe secret once and select the consent checkbox, then Connect, to switch to passwordless storage. If its secret is still available from an unlocked session, Settings offers conversion without re-entry after explicit consent. Legacy plaintext records move to temporary session storage and can also be converted with consent before restart. No password-protected record is silently downgraded. Deletion does not erase old disk remnants or backups.
 
-See the [privacy policy](privacy.html) and [Store publication notes](STORE-PUBLISHING.md). The presentation website includes public privacy and support pages; see the [GitHub Pages guide](docs/GITHUB-PAGES.md) to publish them and verify their URLs before listing submission. This fixed-key design is not a guarantee of Chrome Web Store compliance or approval. Adobe documents Server-to-Server token generation as backend logic; this extension instead performs it locally using each user's supplied credential.
+See the [privacy policy](privacy.html). The presentation website includes public privacy and support pages; see the [GitHub Pages guide](docs/GITHUB-PAGES.md) to publish them and verify their URLs before listing submission. This fixed-key design is not a guarantee of Chrome Web Store compliance or approval. Adobe documents Server-to-Server token generation as backend logic; this extension instead performs it locally using each user's supplied credential.
 
 References: [Adobe token API](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/ims), [Adobe credential guidance](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/).
 
@@ -85,7 +85,7 @@ npm run site:serve  # Build and preview the presentation site on localhost:4173
 
 ESLint uses the flat configuration in `eslint.config.mjs`, with browser/Chrome globals for extension modules and Node globals for development scripts. Dependencies are development-only. CI runs the same checks on pushes and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture, style and manual verification.
 
-`tests/browser-smoke.mjs` exports a Playwright scenario accepting a `Page` and a filename-to-source map (`popup.html`, `popup.js`, `api.js`, `pipeline.js`, `history.js`, `cache.js`, `variables.js`, `style.css`). Run it in a fresh browser context. It intercepts all Adobe requests and supplies Chrome storage fixtures to test aliases, grouping, icons, editing, confirmations, and partial batch failures. This does not validate live credentials, roles, CORS, or actual deployments.
+`tests/browser-smoke.mjs` exports a Playwright scenario accepting a `Page` and a filename-to-source map (`popup.html`, `popup.js`, `api.js`, `pipeline.js`, `history.js`, `cache.js`, `variables.js`, `style.css`). Include `theme.js` in every extension source map and run each fixture in a fresh browser context. It intercepts all Adobe requests and supplies Chrome storage fixtures to test aliases, grouping, icons, editing, confirmations, and partial batch failures. This does not validate live credentials, roles, CORS, or actual deployments.
 
 `tests/auth-browser-smoke.mjs` supplies a second Playwright scenario for the options page. Pass a source map containing `options.html`, `options.js`, `auth.js`, `api.js`, `style.css`, `vault.js`, `credentials.js`, `background.js`, `popup.html`, `popup.js`, `pipeline.js`, `history.js`, `cache.js`, and `manifest.json`. It mocks storage, credential exchange, and the API access check, including real Web Crypto, explicit consent, old credential migration, silent renewal after a simulated restart, concurrent renewal, forgetting, message restrictions, and rejection handling; it does not contact a real Adobe account.
 
@@ -152,3 +152,17 @@ Tabs remain available during read requests. Navigation cancels obsolete reads, a
 ## Presentation website
 
 `site/` provides a responsive dark presentation page, sample-data product preview, installation steps and a support guide. `npm run site:build` generates `dist/site/`, including the privacy policy sourced from the extension. The website version follows `manifest.json`. See [GitHub Pages publishing](docs/GITHUB-PAGES.md) for the workflow, local preview and Store listing URLs. Publishing the site does not publish the extension.
+
+### Appearance
+
+Settings → Appearance offers System, Light and Dark. System is the default and follows the computer’s color scheme, including changes while a page is open. Explicit choices override it and persist locally in the Chrome profile. Popup, Settings and the packaged privacy page share the selection; changing appearance does not refresh Adobe data or alter the connection. The public presentation website keeps its separate design.
+
+`tests/theme-browser-smoke.mjs` verifies OS inheritance, live system changes, explicit overrides, reopening, cross-page updates, status/action contrast, and absence of Adobe requests. `tests/theme.test.mjs` covers defaults, persistence, storage events and recovery from storage failures.
+
+### Shared icon
+
+The website, Chrome toolbar, extension management page and Store icon share the artwork in `site/assets/mark.svg`. PNG exports live in `icons/`. Use `icons/icon-128.png` for the Store listing; include the full directory in extension packages.
+
+## Store release package
+
+Run `npm run release:check` (Node.js 22.13+ and Python 3) to lint, test, check the site, and create a verified runtime-only ZIP in `dist/`. The archive includes icons and themes but excludes tests, development packages, website source and local configuration. Publication drafts, screenshots and internal working notes are kept locally and excluded from Git. Packaging does not establish Store compliance or perform submission; credential security review and authorized live Adobe verification remain required.

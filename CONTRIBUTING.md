@@ -30,4 +30,4 @@ Use JavaScript ES modules, camelCase, `const` by default and surrounding formatt
 
 Use focused imperative Conventional Commit subjects, for example `fix: preserve variable drafts on refresh`. Explain user-visible behavior and verification in pull requests. Include screenshots for UI changes, link relevant issues and label any untested live actions. Test remote changes only against an authorized nonproduction integration.
 
-CI runs lint, Node tests and site checks on pushes and pull requests. Before a release, also verify live authentication, update progress, pipeline actions and Chrome layout. See [the Pages guide](docs/GITHUB-PAGES.md) and [Store publication notes](STORE-PUBLISHING.md).
+CI runs lint, Node tests and site checks on pushes and pull requests. Before a release, also verify live authentication, update progress, pipeline actions and Chrome layout. See [the Pages guide](docs/GITHUB-PAGES.md) and [release package notes](README.md#store-release-package).

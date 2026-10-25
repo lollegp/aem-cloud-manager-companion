@@ -14,7 +14,9 @@
     "check": "npm run lint && npm test && npm run site:check",
     "site:serve": "node scripts/serve-site.mjs",
     "site:build": "node scripts/build-site.mjs",
-    "site:check": "node scripts/check-site.mjs"
+    "site:check": "node scripts/check-site.mjs",
+    "package": "python3 scripts/package-extension.py",
+    "release:check": "npm run check && npm run package"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
