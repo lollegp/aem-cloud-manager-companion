@@ -85,7 +85,7 @@ $('connect').addEventListener('click', () => perform(async () => {
         await request(pathFor(config.programId, '/environments'), 'GET', undefined, {expectedConfig: config});
         feedback(`Connected to program ${config.programId}. Cloud Manager access verified.`, true);
     } catch (error) {
-        throw new Error(`${saved ? 'Credential saved. ' : ''}Connection failed: ${error.message}`);
+        throw new Error(`${saved ? 'Credential saved. ' : ''}Connection failed: ${error.message}`, {cause: error});
     } finally { clearSensitiveInputs(); }
 }));
 
@@ -151,6 +151,6 @@ $('test').addEventListener('click', () => perform(async () => {
     if (['clientId', 'orgId', 'programId'].some(key => config[key] !== saved[key])) throw new Error('Save the connection or generate a token before testing changed settings.');
     feedback('Testing Cloud Manager access...');
     try { await request(pathFor(saved.programId, '/environments')); }
-    catch (e) { throw new Error(`Cloud Manager connection failed: ${e.message} Check the client scopes and your program permissions.`); }
+    catch (e) { throw new Error(`Cloud Manager connection failed: ${e.message} Check the client scopes and your program permissions.`, {cause: e}); }
     feedback('Connection succeeded: Cloud Manager access verified.', true);
 }));

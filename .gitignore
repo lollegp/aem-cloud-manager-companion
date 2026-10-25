@@ -13,3 +13,6 @@ dist/
 !.env.example
 *.pem
 *.key
+
+# Development dependencies
+node_modules/

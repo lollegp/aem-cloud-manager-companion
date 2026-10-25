@@ -2,6 +2,8 @@
 
 Chrome Manifest V3 extension for Chrome 120 or newer. UI language: English. Independent tool; not an Adobe product.
 
+[Contributing](CONTRIBUTING.md) · [Website / GitHub Pages setup](docs/GITHUB-PAGES.md) · [Privacy policy](privacy.html)
+
 ## Install
 1. Unzip the package.
 2. Open `chrome://extensions`.
@@ -32,7 +34,7 @@ Without a saved secret, enter it for each generation or use **Manual access toke
 
 **Upgrade:** a previous password-protected record remains intact until replaced or deleted. Re-enter your Adobe secret once and select the consent checkbox, then Connect, to switch to passwordless storage. If its secret is still available from an unlocked session, Settings offers conversion without re-entry after explicit consent. Legacy plaintext records move to temporary session storage and can also be converted with consent before restart. No password-protected record is silently downgraded. Deletion does not erase old disk remnants or backups.
 
-See the [privacy policy](privacy.html) and [Store publication notes](STORE-PUBLISHING.md). The public privacy/support URLs will be provided through the planned GitHub Pages site. This fixed-key design is not a guarantee of Chrome Web Store compliance or approval. Adobe documents Server-to-Server token generation as backend logic; this extension instead performs it locally using each user's supplied credential.
+See the [privacy policy](privacy.html) and [Store publication notes](STORE-PUBLISHING.md). The presentation website includes public privacy and support pages; see the [GitHub Pages guide](docs/GITHUB-PAGES.md) to publish them and verify their URLs before listing submission. This fixed-key design is not a guarantee of Chrome Web Store compliance or approval. Adobe documents Server-to-Server token generation as backend logic; this extension instead performs it locally using each user's supplied credential.
 
 References: [Adobe token API](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/ims), [Adobe credential guidance](https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/).
 
@@ -43,7 +45,7 @@ References: [Adobe token API](https://developer.adobe.com/developer-console/docs
 * Environment accordions show inline environment actions and one last-execution ribbon per pipeline. Production approval actions stay on the affected pipeline.
 * Start, stop, approve, and reject actions remain available for eligible pipelines in an environment.
 * Execution history loads only when expanded, with one page initially and additional pages on scroll.
-* Distinct Full-Stack, WebTier, FE, and CDN Config icons; read-only labels derived from Adobe API metadata.
+* Distinct Full-Stack, WebTier, Front End, and CDN Config icons; read-only labels derived from Adobe API metadata.
 * Stage edits, additions, renames, and removals for multiple runtime variables, then save them together. Plain values are prefilled; secret values stay hidden and need a replacement to edit.
 * Optional fixed-key Client Secret storage with automatic token renewal after restart and a Forget control. Secret variable values are never persisted. Access tokens remain in Chrome session storage.
 
@@ -70,13 +72,18 @@ Pipeline types come only from Adobe API metadata and cannot be changed in the ex
 
 ## Development checks
 
-No build or dependency installation is required for the extension. With Node.js 22 or newer, run the regression tests:
+The extension loads directly in Chrome without a build. Development tooling requires Node.js 22.13 or newer:
 
 ```sh
-node --test tests/*.test.mjs
-node --input-type=module --check < popup.js
-node --input-type=module --check < pipeline.js
+npm ci
+npm run check       # ESLint, Node regression tests, and static site checks
+npm run lint        # Correctness rules, no formatting rewrite
+npm run lint:fix    # Apply available fixes; review the diff
+npm test            # Node regression tests only
+npm run site:serve  # Build and preview the presentation site on localhost:4173
 ```
+
+ESLint uses the flat configuration in `eslint.config.mjs`, with browser/Chrome globals for extension modules and Node globals for development scripts. Dependencies are development-only. CI runs the same checks on pushes and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture, style and manual verification.
 
 `tests/browser-smoke.mjs` exports a Playwright scenario accepting a `Page` and a filename-to-source map (`popup.html`, `popup.js`, `api.js`, `pipeline.js`, `history.js`, `cache.js`, `variables.js`, `style.css`). Run it in a fresh browser context. It intercepts all Adobe requests and supplies Chrome storage fixtures to test aliases, grouping, icons, editing, confirmations, and partial batch failures. This does not validate live credentials, roles, CORS, or actual deployments.
 
@@ -141,3 +148,7 @@ Variables use compact expandable rows with name search and a service filter. Mul
 Tabs remain available during read requests. Navigation cancels obsolete reads, and retained content cannot trigger actions while a new view is loading or has failed. Remote writes keep navigation locked until their result is known. Alias, order, and visibility changes update browser preferences without Adobe requests.
 
 `tests/usability-browser-smoke.mjs` covers draft retention and isolation, compact rows, search, persistent group controls, shared environment reads, local-only preference changes, and navigation during slow or failed reads. All Adobe traffic is mocked.
+
+## Presentation website
+
+`site/` provides a responsive dark presentation page, sample-data product preview, installation steps and a support guide. `npm run site:build` generates `dist/site/`, including the privacy policy sourced from the extension. The website version follows `manifest.json`. See [GitHub Pages publishing](docs/GITHUB-PAGES.md) for the workflow, local preview and Store listing URLs. Publishing the site does not publish the extension.

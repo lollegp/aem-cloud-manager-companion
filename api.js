@@ -60,7 +60,7 @@ export async function request(path, method = 'GET', data, {signal,expectedConfig
     } catch (error) {
         if (signal?.aborted) throw signal.reason;
         if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-            throw new Error('Cloud Manager request timed out after 30 seconds. Check your connection and refresh. If you submitted a change, check its state before retrying.');
+            throw new Error('Cloud Manager request timed out after 30 seconds. Check your connection and refresh. If you submitted a change, check its state before retrying.', {cause: error});
         }
         throw error;
     }

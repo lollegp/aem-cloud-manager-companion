@@ -188,15 +188,6 @@ function confirmAction(message) {
     return window.confirm(message);
 }
 
-async function perform(path, method, payload, message) {
-    if (busy || connectionChanged || !confirmAction(message)) return false;
-    const actionConfig = connection, signal = historyController.signal;
-    return run(async () => {
-        await request(path,method,payload,{signal,expectedConfig:actionConfig});
-        await refresh(true);
-    });
-}
-
 function environmentLabel(env) {
     const alias = aliases[aliasKey(connection.orgId, connection.programId, env.id)];
     return alias ? `${alias} · ${env.name || env.id}` : (env.name || `Environment ${env.id}`);
@@ -406,8 +397,8 @@ async function refresh(force = false) {
     const signal = AbortSignal.any([AbortSignal.timeout(45000),historyController.signal]);
     try { return await refreshView(signal, force); }
     catch (error) {
-        if (signal.aborted && signal.reason?.name !== 'TimeoutError') throw new Error('Connection or view changed. Click Refresh to load the current configuration.');
-        if (signal.aborted) throw new Error(`Refresh stopped after 45 seconds. Last step: ${$('message').textContent} Check Settings or retry Refresh.`);
+        if (signal.aborted && signal.reason?.name !== 'TimeoutError') throw new Error('Connection or view changed. Click Refresh to load the current configuration.', {cause: error});
+        if (signal.aborted) throw new Error(`Refresh stopped after 45 seconds. Last step: ${$('message').textContent} Check Settings or retry Refresh.`, {cause: error});
         throw error;
     }
     finally {if(!connectionChanged&&!historyController.signal.aborted)scheduleEnvironmentPoll();}
@@ -503,7 +494,7 @@ async function currentExecution(pid, pipeline, signal, expectedConfig, forceDeta
 }
 
 async function displayedExecution(pid, pipeline, signal, previous, forceDetails = false) {
-    let current = null, missing = false;
+    let current = null, missing;
     try {
         current = await currentExecution(pid,pipeline,signal,undefined,forceDetails);
         missing = !current;
@@ -1158,7 +1149,7 @@ async function renderVariables(pid, signal, loadedVariables) {
                     await persistSnapshot(mutationSignal);
                 }
                 catch(error){
-                    if(/^500\b/.test(error.message||''))throw new Error(`Cloud Manager returned ${error.message}. Check variable names, service values, unchanged types, the 200-variable limit, and secret values under 500 characters. Environment updates can fail while a pipeline or AEM update is running. Refresh before retrying to see which changes applied.`);
+                    if(/^500\b/.test(error.message||''))throw new Error(`Cloud Manager returned ${error.message}. Check variable names, service values, unchanged types, the 200-variable limit, and secret values under 500 characters. Environment updates can fail while a pipeline or AEM update is running. Refresh before retrying to see which changes applied.`, {cause: error});
                     throw error;
                 }
                 setMessage('Variable changes submitted. Environment update in progress; pipeline starts are blocked.');

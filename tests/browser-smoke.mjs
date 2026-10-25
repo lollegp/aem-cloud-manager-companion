@@ -199,7 +199,7 @@ export default async function browserSmoke(page, files) {
     pipelines.push({id: '21', name: 'Production FE', status: 'WAITING', buildType: 'frontend', phases: [{type: 'DEPLOY', environmentId: '2'}]});
     pipelines.find(p => p.id === '13').status = 'WAITING';
     await page.locator('#refresh').click(); await ready();
-    let production = page.locator('.environment-group').filter({has: page.locator('.environment-summary').filter({hasText: 'Production'})});
+    const production = page.locator('.environment-group').filter({has: page.locator('.environment-summary').filter({hasText: 'Production'})});
     assert(await production.getByRole('button', {name: 'Approve waiting deployments'}).isEnabled(), 'production group has waiting promotion action');
     assert(await production.getByRole('button', {name: 'Approve deployment', exact: true}).count() === 2, 'each production pipeline has individual promotion');
     assert(await page.locator('.environment-group').first().getByRole('button', {name: 'Approve deployment', exact: true}).count() === 0, 'shared development group does not duplicate production decisions');

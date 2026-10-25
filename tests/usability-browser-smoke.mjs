@@ -17,7 +17,7 @@ export default async function usabilitySmoke(page,files) {
     const environments=[{id:'1',name:'Development',type:'dev',status:'ready'},{id:'2',name:'Production',type:'prod',status:'ready'}];
     const variables={1:[{name:'RUNMODES',service:'author',type:'string',value:'initial',status:'ready'}],2:[]};
     const pipeline={id:'10',name:'Shared pipeline',type:'CI_CD',status:'IDLE',phases:[{type:'DEPLOY',environmentId:'1'},{type:'DEPLOY',environmentId:'2'}]};
-    let starts=0,patches=0,failStatus=false,heldEnvironmentRead=null;
+    let failStatus=false,heldEnvironmentRead=null;
     await page.route('https://cloudmanager.adobe.io/**',async route=>{
         const request=route.request(),url=new URL(request.url()),path=url.pathname;calls.push(path);
         const send=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
@@ -26,14 +26,14 @@ export default async function usabilitySmoke(page,files) {
         if(path.endsWith('/variables')){
             const id=path.match(/environment\/(\d+)/)[1];
             if(request.method()==='PATCH'){
-                patches++;variables[id]=request.postDataJSON().map(item=>({...item,status:'updating'}));
+                variables[id]=request.postDataJSON().map(item=>({...item,status:'updating'}));
                 return send({_embedded:{variables:variables[id]}});
             }
             return failStatus?send({message:'Status unavailable'},503):send({_embedded:{variables:variables[id]}});
         }
         if(path.endsWith('/pipeline/10'))return send(pipeline);
         if(path.endsWith('/execution')){
-            if(request.method()==='PUT'){starts++;return send({});}
+            if(request.method()==='PUT'){return send({});}
             return send({message:'No execution'},404);
         }
         if(path.endsWith('/executions'))return send({_embedded:{executions:[]}});

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Installation, Adobe connection setup, troubleshooting and support for AEM Cloud Manager Companion."><title>Docs &amp; support · Cloud Manager Companion</title><link rel="icon" href="assets/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/site.css"></head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header wrap"><a class="brand" href="index.html"><img src="assets/mark.svg" alt="" width="30" height="30">Cloud Manager <span>Companion</span></a><nav aria-label="Main navigation"><a href="index.html#install">Install</a><a href="privacy.html">Privacy</a><a href="https://github.com/lollegp/aem-cloud-manager-companion">GitHub ↗</a></nav></header>
+<main id="main" class="wrap document">
+    <p class="eyebrow">DOCUMENTATION / v__EXTENSION_VERSION__</p>
+    <h1>A little context.<br>A clearer next step.</h1>
+    <p class="lead">Set up your connection, understand the controls, and find help when a request doesn’t go as planned.</p>
+    <h2 id="connection">Connect to Adobe</h2>
+    <p>You need Chrome 120 or newer and an authorized Cloud Manager integration. Ask your Adobe administrator for the correct access and product profiles.</p>
+    <ol><li>Load the extension using the <a href="index.html#install">installation steps</a>.</li><li>In Adobe Developer Console, open the Cloud Manager project and find its OAuth Server-to-Server credential.</li><li>Open the extension’s Settings and enter Client ID, Organization ID, Program ID, Client Secret, and the supplied scopes.</li><li>Choose <strong>Connect</strong>. The extension generates a token and verifies program access.</li></ol>
+    <p>To use an existing token instead, open <strong>Advanced connection controls → Manual access token</strong>. Manual tokens need replacing when they expire unless a matching credential is saved for renewal.</p>
+    <p class="notice">Saving a Client Secret is optional and requires consent. The bundled encryption key does not keep saved secrets confidential from someone with access to the profile and extension code. Adobe’s Server-to-Server guidance expects a secure backend; follow your organization’s credential requirements. See the <a href="privacy.html">privacy policy</a> and <a href="https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/">Adobe authentication guidance</a>.</p>
+    <h2 id="workflows">Use the extension</h2>
+    <h3>Pipelines</h3><p>Open an environment to refresh pipeline and execution status. Use group actions for eligible pipelines or individual actions on a pipeline. Current status and the last execution outcome are separate. Production approval controls appear when Adobe exposes a recognized waiting approval step. Confirmations list every affected target; a shared pipeline can affect more than one environment.</p><p>Execution history loads only when opened and fetches more pages as you scroll. Refresh updates the catalog and expanded environments. Stop and Reject depend on the actions available from Adobe.</p>
+    <h3>Variables</h3><p>Choose an environment, search by name or filter by service, then expand a row to edit it. Additions, edits and removals can be saved together. The same variable name can appear in different services. Plain values are prefilled; secret values are write-only.</p><p>Drafts survive tab, environment and Refresh changes while the popup remains open. Closing the popup or changing the connection clears them. After Save, the extension tracks the environment update and blocks pipeline starts and approvals until it is ready.</p>
+    <h3>Environments</h3><p>Set local aliases, move environments up or down, and choose which appear under Pipelines. These preferences are saved in your browser. Opening this tab fetches current environment status.</p>
+    <h2 id="troubleshooting">Common questions</h2>
+    <details><summary>Why can’t I start or approve a pipeline?</summary><p>The environment may be updating or unavailable, or the pipeline may no longer be eligible. Wait for the update, refresh its status, and check your Cloud Manager permissions. The extension verifies targets and execution state before sending an action.</p></details>
+    <details><summary>Why does connecting fail?</summary><p>Verify that the Client ID and Client Secret belong to the same integration, the organization and program are correct, and the scopes and product profiles allow Cloud Manager access. Use the error from Connect to distinguish invalid credentials, access restrictions, or network failure.</p></details>
+    <details><summary>What happens after a request times out?</summary><p>Read requests can be retried with Refresh. For a timed-out Start, Stop, approval or variable save, inspect the remote state in Cloud Manager before retrying. A timeout does not prove that Adobe rejected the action.</p></details>
+    <details><summary>How do I stop automatic token renewal?</summary><p>In Settings, choose <strong>Forget saved secret</strong>. Clearing only the token keeps the saved credential, so the next request can generate a new token. Revocation and rotation happen in Adobe Developer Console.</p></details>
+    <details><summary>Does the website connect to my Adobe account?</summary><p>No. The product preview uses fixed sample data. This site has no account connection, analytics, or credential form. Only the installed extension sends authorized requests to Adobe.</p></details>
+    <h2 id="contact">Report an issue or ask a privacy question</h2>
+    <p><a href="https://github.com/lollegp/aem-cloud-manager-companion/issues">Open an issue on GitHub ↗</a>. Include the extension version, Chrome version, steps to reproduce, and the error text. GitHub issues are public: remove tokens, secrets, variable values and identifying program details before sharing.</p>
+    <p>For privacy questions, use the same support channel with a general description only. Do not post credentials or other private account information.</p>
+    <p>More detail is available in the <a href="https://github.com/lollegp/aem-cloud-manager-companion#readme">repository README</a> and <a href="privacy.html">privacy policy</a>.</p>
+</main>
+<footer class="site-footer wrap"><span>Independent tool. Not affiliated with Adobe.</span><nav aria-label="Footer"><a href="index.html">Home</a><a href="privacy.html">Privacy</a></nav></footer>
+</body>
+</html>
