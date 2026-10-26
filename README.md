@@ -1,5 +1,9 @@
 # AEM Cloud Manager Companion (v0.6.1)
 
+
+Install from the [Chrome Web Store](https://chromewebstore.google.com/detail/aem-cloud-manager-compani/algghcdmdihlkbkaeeeplmhallhainna).
+
+Store listing copy, screenshots and reviewer guidance are available in [publication materials](STORE-PUBLISHING.md).
 Chrome Manifest V3 extension for Chrome 120 or newer. UI language: English. Independent tool; not an Adobe product.
 
 [Contributing](CONTRIBUTING.md) · [Website / GitHub Pages setup](docs/GITHUB-PAGES.md) · [Privacy policy](privacy.html)

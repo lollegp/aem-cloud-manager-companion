@@ -1,0 +1,47 @@
+{
+  "checkedAt": "2026-10-25T20:35:28.227701+00:00",
+  "version": "0.6.1",
+  "archive": "aem-cloud-manager-companion-0.6.1.zip",
+  "sha256": "c9e5c47f4ab724914dbd2a90dd5a1d15f425e080699fe3e097d0f1d198c19c53",
+  "technicalChecks": {
+    "lint": "passed, zero warnings",
+    "unitTests": 92,
+    "mockedBrowserChecks": 291,
+    "browserFixtureFailures": 0,
+    "runtimeFiles": 21,
+    "zipContentAndCRC": "passed",
+    "reproducibleSHA256": "passed",
+    "sitePages": 3,
+    "localLinksAndAssets": 35,
+    "workflowYAML": "parsed"
+  },
+  "cleanProfileMV3": {
+    "browser": "Chrome for Testing 153.0.8010.12",
+    "serviceWorker": "registered",
+    "initialCredentials": "empty",
+    "initialToken": "empty",
+    "themePersistence": "passed",
+    "privacyPage": "loaded",
+    "icon": "loaded",
+    "adobeRequests": 0
+  },
+  "publicURLs": {
+    "https://lollegp.github.io/aem-cloud-manager-companion/": 200,
+    "https://lollegp.github.io/aem-cloud-manager-companion/privacy.html": 200,
+    "https://lollegp.github.io/aem-cloud-manager-companion/support.html": 200
+  },
+  "screenshots": {
+    "count": 3,
+    "dimensions": "1280x800",
+    "data": "synthetic; rendered actual extension UI"
+  },
+  "submissionStatus": "candidate; not submitted or compliance-approved",
+  "pending": [
+    "Credential architecture security review; automatic renewal retained at publisher request",
+    "Authorized nonproduction Adobe verification and private reviewer access",
+    "Final dashboard data declarations, developer contact and submission",
+    "Publish latest website policy/help source before submission"
+  ],
+  "recordType": "Historical candidate validation snapshot; not a current Store review status",
+  "storeListingURL": "https://chromewebstore.google.com/detail/aem-cloud-manager-compani/algghcdmdihlkbkaeeeplmhallhainna"
+}

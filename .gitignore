@@ -17,9 +17,7 @@ dist/
 # Development dependencies
 node_modules/
 
-# Local publication materials and internal working notes
-store/
-STORE-PUBLISHING.md
+# Internal working notes and local capture tooling
 docs/superpowers/
 tests/store-capture.mjs
 .serena/
