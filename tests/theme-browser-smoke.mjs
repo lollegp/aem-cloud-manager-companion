@@ -11,16 +11,18 @@ export default async function themeBrowserSmoke(page, files) {
     await page.goto('https://theme-fixture.test/reset');
     await page.evaluate(() => localStorage.clear());
     await page.context().addInitScript(() => {
-        const listeners = [], read = () => JSON.parse(localStorage.getItem('themeFixture') || '{}');
+        const profile={id:'theme-profile',name:'My program',clientId:'',orgId:'',programId:'',oauthScopes:''};
+        const registry={version:1,activeProfileId:profile.id,profiles:[profile]};
+        const listeners = [], read = () => ({connectionProfiles:registry,...JSON.parse(localStorage.getItem('themeFixture') || '{}')});
         const emit = (before, after) => {
             const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
             const changes = Object.fromEntries([...keys].filter(key => before[key] !== after[key]).map(key => [key, {oldValue: before[key], newValue: after[key]}]));
             listeners.forEach(listener => listener(changes, 'local'));
         };
         window.chrome = {storage: {
-            local: {get: async keys => Object.fromEntries(keys.filter(key => key in read()).map(key => [key, read()[key]])), set: async values => {const before = read(), after = {...before, ...values};localStorage.setItem('themeFixture', JSON.stringify(after));emit(before, after);}},
+            local: {get: async keys => Object.fromEntries(keys.filter(key => key in read()).map(key => [key, read()[key]])), set: async values => {const before = read(), after = {...JSON.parse(localStorage.getItem('themeFixture') || '{}'), ...values};localStorage.setItem('themeFixture', JSON.stringify(after));emit(before, {connectionProfiles:registry,...after});}},
             session: {get: async () => ({})}, onChanged: {addListener: listener => listeners.push(listener)}
-        }, runtime: {sendMessage: async () => ({ok: true, data: {saved: false}}), openOptionsPage() {}}};
+        }, runtime: {sendMessage: async message => ({ok:true,data:message.action==='listProfiles'?{activeProfileId:profile.id,profiles:[profile]}:{saved:false}}), openOptionsPage() {}}};
         window.addEventListener('storage', event => {if (event.key === 'themeFixture') emit(JSON.parse(event.oldValue || '{}'), JSON.parse(event.newValue || '{}'));});
     });
     await page.emulateMedia({colorScheme: 'light'});

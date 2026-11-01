@@ -28,6 +28,7 @@ export default async function browserSmoke(page, files) {
                     const data = JSON.parse(sessionStorage.getItem('cacheFixture') || '{"token":"fixture-token"}');
                     return Object.fromEntries(keys.filter(key => key in data).map(key => [key,data[key]]));
                 },
+                remove: async key => {const data=JSON.parse(sessionStorage.getItem('cacheFixture') || '{}');delete data[key];sessionStorage.setItem('cacheFixture',JSON.stringify(data));},
                 set: async values => sessionStorage.setItem('cacheFixture',JSON.stringify({...JSON.parse(sessionStorage.getItem('cacheFixture') || '{"token":"fixture-token"}'),...values}))
             }
         }, runtime: {openOptionsPage() {}}};
@@ -128,18 +129,17 @@ export default async function browserSmoke(page, files) {
     const variableEditor = page.locator('.variable-row').first();
     assert(await variableEditor.getByLabel('Value for API_URL').inputValue() === variables[0].value, 'existing plain value prefilled');
     assert(await variableEditor.getByLabel('Service for API_URL').inputValue() === 'publish', 'existing service prefilled');
-    const longValue=variableEditor.locator('.variable-preview-wrap');
-    assert(await longValue.getAttribute('data-tooltip')===variables[0].value,'full variable value is available in multiline tooltip');
-    assert(await longValue.locator('.variable-preview').evaluate(el=>getComputedStyle(el).textOverflow==='ellipsis'&&el.scrollWidth>el.clientWidth),'long variable value is visually truncated');
+    const longValue=variableEditor.locator('textarea');
+    assert(await longValue.inputValue()===variables[0].value,'full variable value is available in the visible textarea');
+    assert(await longValue.evaluate(el=>getComputedStyle(el).whiteSpace==='pre-wrap'&&el.clientHeight<=120&&el.scrollWidth<=el.clientWidth),'long variable value wraps within a bounded editor');
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'variable fields fit popup without horizontal overflow');
     await page.evaluate(() => { window.fixtureConfirm = false; });
-    assert(await page.getByRole('button', {name: 'Save changes'}).isDisabled(), 'save is disabled without pending changes');
+    assert(await page.locator('.action-save').isDisabled(), 'save is disabled without pending changes');
     assert(await variableEditor.getByLabel('Value for API_URL').inputValue() === variables[0].value, 'unchanged cancelled save preserves input');
     assert(writes.length === 0, 'cancelled save sends no mutation');
     const secretEditor = page.locator('.variable-row').filter({has:page.getByLabel('Name for SECRET')});
     assert(await secretEditor.getByLabel('Value for SECRET').inputValue() === '', 'secret value never prefilled');
     assert(await secretEditor.getByLabel('Value for SECRET').getAttribute('type') === 'password', 'secret replacement masked');
-    await variableEditor.locator(':scope > summary').click();
     await variableEditor.getByLabel('Value for API_URL').fill('https://example.test/updated');
     await page.getByRole('button', {name: 'Add variable'}).click();
     const newRow = page.locator('.variable-row').first();
@@ -151,18 +151,18 @@ export default async function browserSmoke(page, files) {
     assert(await page.locator('.variable-row').count()===3,'unused variable drafts can be removed without an API call');
     await newRow.getByLabel('Name').fill('NEW_VALUE');
     await newRow.getByLabel('Value').fill('new');
-    await secretEditor.getByLabel('Remove SECRET').check();
+    await secretEditor.getByRole('button',{name:'Remove SECRET'}).click();
     await page.evaluate(() => { window.fixtureConfirm = true; });
-    await page.getByRole('button', {name: 'Save changes'}).click(); await ready();
+    await page.getByRole('button', {name: /^Save \d+ changes?$/}).click(); await ready();
     assert(writes.length === 1 && Array.isArray(writes[0].body) && writes[0].body.length === 3, 'bulk edit, add, and remove use one confirmed raw-array PATCH batch');
     assert(writes[0].body.some(v=>v.name==='SECRET'&&v.value===''), 'bulk deletion uses documented empty-value delete');
-    assert((await page.locator('.variable-row').allTextContents()).some(text=>text.includes('NEW_VALUE')), 'saved variable batch refreshes the editor');
+    assert((await page.locator('.variable-row input').evaluateAll(inputs=>inputs.map(input=>input.value))).includes('NEW_VALUE'), 'saved variable batch refreshes the editor');
     await page.getByRole('button', {name: 'Add variable'}).click();
     const rejectedRow=page.locator('.variable-row').first();
     await rejectedRow.getByLabel('Name').fill('RETRY_ME');
     await rejectedRow.getByLabel('Value').fill('value');
     failVariableWrite=true;
-    await page.getByRole('button', {name: 'Save changes'}).click(); await ready();
+    await page.getByRole('button', {name: /^Save \d+ changes?$/}).click(); await ready();
     assert((await page.locator('#message').innerText()).includes('Cloud Manager returned 500')&&(await page.locator('#message').innerText()).includes('Refresh before retrying'),'500 response explains validation checks and refresh before retry');
     assert(await page.locator('.variable-row').first().getByLabel('Name').inputValue()==='RETRY_ME','failed variable save preserves draft');
     await rejectedRow.getByRole('button',{name:'Remove draft'}).click();
@@ -170,11 +170,10 @@ export default async function browserSmoke(page, files) {
     await page.getByRole('button',{name:'Refresh',exact:true}).click();await ready();
     const authorRow=page.locator('.variable-row[data-original-name="RUNMODES"][data-original-service="author"]');
     const publishRow=page.locator('.variable-row[data-original-name="RUNMODES"][data-original-service="publish"]');
-    await authorRow.locator(':scope > summary').click();
     await authorRow.getByLabel('Value for RUNMODES').fill('updated-author');
-    await publishRow.getByLabel('Remove RUNMODES').check();
+    await publishRow.getByRole('button',{name:'Remove RUNMODES'}).click();
     const beforeServiceSave=writes.length;
-    await page.getByRole('button',{name:'Save changes'}).click();await ready();
+    await page.getByRole('button',{name:/^Save \d+ changes?$/}).click();await ready();
     assert(writes.length===beforeServiceSave+1,'same variable name in separate services saves successfully');
     assert(variables.some(v=>v.name==='RUNMODES'&&v.service==='author'&&v.value==='updated-author')&&!variables.some(v=>v.name==='RUNMODES'&&v.service==='publish'),'service-scoped edit and deletion affect only their selected services');
     await tab('Pipelines');

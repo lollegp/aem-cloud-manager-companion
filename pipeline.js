@@ -93,17 +93,15 @@ export function stopAction(step) {
 }
 
 export async function runPipelineBatch(pipelines, action) {
-    const results = [], seen = new Set();
-    for (const pipeline of pipelines) {
-        if (seen.has(String(pipeline.id))) continue;
-        seen.add(String(pipeline.id));
-        try {
-            results.push({pipeline, ok: true, message: await action(pipeline)});
-        } catch (error) {
-            results.push({pipeline, ok: false, message: error.message || String(error)});
-        }
-    }
-    return results;
+    const seen = new Set();
+    const unique = pipelines.filter(pipeline => {
+        if (seen.has(String(pipeline.id))) return false;
+        seen.add(String(pipeline.id));return true;
+    });
+    return Promise.all(unique.map(async pipeline => {
+        try { return {pipeline,ok:true,message:await action(pipeline)}; }
+        catch(error) { return {pipeline,ok:false,message:error.message || String(error)}; }
+    }));
 }
 
 export function canStopPipeline(pipeline) {

@@ -12,6 +12,9 @@ Manage Adobe Cloud Manager pipelines, environment variables, and environment sta
 
 Keep Adobe AEM Cloud Manager operations close at hand in Chrome.
 
+MULTIPLE PROGRAMS
+Switch between isolated program profiles, each with its own credentials, session tokens, drafts and environment preferences. Accepted actions continue in the background after the popup closes.
+
 PIPELINES BY ENVIRONMENT
 View Full-Stack, WebTier, Front End and CDN Config pipelines grouped by environment. Start or stop an eligible pipeline, or act on a group. Approve or reject recognized waiting production deployments. Confirmations show affected targets, including shared pipelines.
 
@@ -19,7 +22,7 @@ STATUS WITH CONTEXT
 See current pipeline availability and the last execution outcome separately. Expand an environment to refresh its status. Open execution history when needed and load older runs as you scroll.
 
 RUNTIME VARIABLES
-Search and filter by service. Stage additions, edits and removals for several variables, then save together. Plain values are prefilled; secret values remain write-only. Drafts stay in memory while the popup is open. Environment updates show progress and block pipeline starts and approvals until ready.
+Search and filter by service. Stage additions, edits and removals for several variables, then save together. Plain values are prefilled; secret values remain write-only. Drafts, including replacement secrets, survive popup closure in memory-backed Chrome session storage until Save or Discard. Chrome restart or extension reload also clears drafts. Drafts are not written to local or sync storage. Export saved variables to JSON without secret values, or merge JSON into an editable draft. Import does not save automatically. Environment updates show progress and block pipeline starts and approvals until ready.
 
 YOUR ENVIRONMENTS, YOUR VIEW
 Set browser-local aliases, reorder environments, or hide them from Pipelines. Choose Light, Dark or System appearance; System follows your computer by default.
@@ -28,7 +31,7 @@ REQUIREMENTS AND ACCESS
 Chrome 120 or newer and an authorized Cloud Manager integration are required. Available actions depend on Adobe roles, deployment state and the actions advertised by the API. This extension does not grant Adobe access or bypass Cloud Manager permissions.
 
 PRIVACY
-The extension ships without credentials. Requests go directly to Adobe over HTTPS. There is no developer-operated backend, advertising or analytics. Runtime variable values and drafts are not persisted. Read the privacy policy for credential handling and local storage details.
+The extension ships without credentials. Requests go directly to Adobe over HTTPS. There is no developer-operated backend, advertising or analytics. Drafts, including replacement secrets, survive popup closure in memory-backed Chrome session storage until Save or Discard. Chrome restart or extension reload also clears drafts. Drafts are not written to local or sync storage. Read the privacy policy for credential handling and local storage details.
 
 Independent tool. Not affiliated with or endorsed by Adobe.
 

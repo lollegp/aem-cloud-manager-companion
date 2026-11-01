@@ -1,9 +1,11 @@
+import {PROFILE_KEY, profilePrefix} from './profiles.js';
 import {abortable, safeAPIPath} from './api.js';
 
 const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined && (value[key] === null || ['string','number','boolean'].includes(typeof value[key]))).map(key => [key, value[key]]));
 export function snapshotKey(config) {
-    return `pipelineSnapshot:v1:${JSON.stringify(['clientId','orgId','programId','oauthScopes'].map(key => String(config[key] || '')))}`;
+    return `${profilePrefix(config.profileId)}pipelineSnapshot:v1:${JSON.stringify(['clientId','orgId','programId','oauthScopes'].map(key => String(config[key] || '')))}`;
 }
+export const snapshotInvalidationKey = config => `${profilePrefix(config.profileId)}pipelineInvalidated:${config.programId}`;
 export function projectPipeline(pipeline) {
     return {...pick(pipeline, ['id','name','status','type','buildType','buildEnvironment','pipelineType','lastStartedAt','lastFinishedAt']),
         ...(Array.isArray(pipeline.phases) ? {phases: pipeline.phases.map(phase => ({
@@ -39,7 +41,9 @@ export async function loadSnapshot(config, signal, storage = chrome.storage.sess
     const deadline = signal ? AbortSignal.any([signal,AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000);
     try {
         const key = snapshotKey(config);
-        const value = (await abortable(storage.get([key]),deadline))[key];
+        const invalidationKey=snapshotInvalidationKey(config);
+        const values=await abortable(storage.get([key,invalidationKey]),deadline),value=values[key];
+        if(values[invalidationKey] && (!value?.updatedAt || value.updatedAt<=values[invalidationKey]))return null;
         if (value?.version !== 1 || !Array.isArray(value.environments) || !Array.isArray(value.pipelines)) return null;
         return projectSnapshot(value);
     } catch (error) {
@@ -52,5 +56,17 @@ export async function saveSnapshot(config, snapshot, signal, storage = chrome.st
     const value = projectSnapshot(snapshot);
     if (JSON.stringify(value).length > 2000000) throw new Error('Pipeline cache exceeds its size limit.');
     const deadline = signal ? AbortSignal.any([signal,AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000);
-    await abortable(storage.set({[snapshotKey(config)]:value}),deadline);
+    const key=snapshotKey(config);
+    const write=storage.set({[key]:value}).then(async()=>{
+        const invalidationKey=snapshotInvalidationKey(config);
+        const invalidated=(await storage.get([invalidationKey]))[invalidationKey];
+        if(invalidated && value.updatedAt<=invalidated){await storage.remove(key);return;}
+        // Chrome storage writes cannot be cancelled. Remove a delayed write if
+        // profile deletion finished while that write was in flight.
+        if(config.profileId){
+            const state=(await chrome.storage.local.get([PROFILE_KEY]))[PROFILE_KEY];
+            if(!state?.profiles.some(profile=>profile.id===config.profileId))await storage.remove(key);
+        }
+    });
+    await abortable(write,deadline);
 }

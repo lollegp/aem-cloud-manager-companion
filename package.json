@@ -1,6 +1,6 @@
 {
   "name": "aem-cloud-manager-companion",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Development checks for the AEM Cloud Manager Companion Chrome extension",

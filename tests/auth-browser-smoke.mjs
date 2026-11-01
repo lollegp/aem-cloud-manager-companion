@@ -14,11 +14,13 @@ export default async function authBrowserSmoke(page, files) {
         };
         const session = JSON.parse(sessionStorage.getItem('fixtureSession') || '{}'), listeners = [];
         window.fixtureLocal = local; window.fixtureSession = session;
+        window.fixtureProfile = () => local.connectionProfiles.profiles.find(p=>p.id===local.connectionProfiles.activeProfileId);
+        window.fixtureProfileSession = () => session[`profileSession:${local.connectionProfiles.activeProfileId}`] || {};
         window.fixtureStorageWrites = []; window.fixtureAccess = [];
         const persist = () => { localStorage.setItem('fixtureLocal', JSON.stringify(local)); sessionStorage.setItem('fixtureSession', JSON.stringify(session)); };
         const emit = (changes, name) => { if (Object.keys(changes).length) queueMicrotask(() => listeners.forEach(fn => fn(changes, name))); };
         const storage = (data, name) => ({
-            get: async keys => structuredClone(Object.fromEntries(keys.filter(k => k in data).map(k => [k, data[k]]))),
+            get: async keys => structuredClone(keys == null ? data : Object.fromEntries(keys.filter(k => k in data).map(k => [k, data[k]]))),
             set: async values => {
                 window.fixtureStorageWrites.push({name, values: structuredClone(values)});
                 const changes = {};
@@ -75,7 +77,7 @@ export default async function authBrowserSmoke(page, files) {
     check(!await page.locator('#rememberSecret').isChecked(), 'saving requires explicit opt-in');
     check((await page.locator('body').innerText()).includes('Anyone with the extension code and your saved data can decrypt it'), 'fixed-key limitation disclosed');
     check(await page.locator('#migrationNotice').isVisible(), 'legacy migration prompt shown');
-    check(await page.evaluate(() => !fixtureLocal.rememberedSecret && fixtureSession.legacyCredential.secret === 'fixture-secret'), 'legacy plaintext removed from disk');
+    check(await page.evaluate(() => !fixtureLocal.rememberedSecret && window.fixtureProfileSession().legacyCredential.secret === 'fixture-secret'), 'legacy plaintext removed from disk');
     check(await page.locator('#clientSecret').inputValue() === '', 'legacy secret never restored to form');
     check(await page.evaluate(() => fixtureAccess.every(a => a.accessLevel === 'TRUSTED_CONTEXTS')), 'storage restricted to trusted contexts');
     check(!(await page.evaluate(() => sendFrom({id: 'foreign', url: location.href}))).ok, 'foreign extension rejected');
@@ -85,18 +87,18 @@ export default async function authBrowserSmoke(page, files) {
     check((await page.locator('#feedback').innerText()).includes('consent'), 'save blocked without consent');
     await page.locator('#rememberSecret').check(); await click('saveVault');
     check((await page.locator('#vaultStatus').innerText()).includes('Secret saved'), 'saved without password');
-    check(await page.evaluate(() => fixtureLocal.credentialVault.version === 2 && !fixtureSession.legacyCredential && !JSON.stringify(fixtureLocal).includes('fixture-secret')), 'version 2 ciphertext saved; temporary copy removed');
+    check(await page.evaluate(() => window.fixtureProfile().credentialVault.version === 2 && !window.fixtureProfileSession().legacyCredential && !JSON.stringify(fixtureLocal).includes('fixture-secret')), 'version 2 ciphertext saved; temporary copy removed');
     check(await page.evaluate(() => !JSON.stringify(fixtureStorageWrites.filter(w => w.name === 'local')).includes('fixture-secret')), 'no plaintext persistent write');
     await click('test');
     check(tokenRequests === 1 && apiRequests === 1, 'test connection automatically obtains first token');
-    check(await page.evaluate(() => fixtureSession.token === 'fixture-token-1' && !fixtureLocal.token && !JSON.stringify(fixtureSession).includes('fixture-secret')), 'only token retained in session');
+    check(await page.evaluate(() => window.fixtureProfileSession().token === 'fixture-token-1' && !fixtureLocal.token && !JSON.stringify(fixtureSession).includes('fixture-secret')), 'only token retained in session');
     await page.waitForFunction(() => document.getElementById('tokenStatus').textContent.includes('Expires'));
     check(true, 'token status updates after automatic renewal');
-    const beforeFailure = await page.evaluate(() => fixtureSession.token);
+    const beforeFailure = await page.evaluate(() => window.fixtureProfileSession().token);
     fail = true; await click('generate');
     check((await page.locator('#feedback').innerText()).includes('rejected'), 'provider errors reported');
     check(!(await page.locator('body').innerText()).includes('fixture-secret'), 'provider error sanitized');
-    check(await page.evaluate(() => fixtureSession.token) === beforeFailure, 'failed generation preserves token');
+    check(await page.evaluate(() => window.fixtureProfileSession().token) === beforeFailure, 'failed generation preserves token');
     fail = false;
     // Browser restart clears session storage. Open popup directly, without Settings.
     await page.evaluate(() => sessionStorage.clear());
@@ -104,9 +106,9 @@ export default async function authBrowserSmoke(page, files) {
     await page.goto('https://auth-companion.test/popup.html');
     await page.waitForFunction(() => !document.getElementById('refresh').disabled);
     check(tokenRequests === beforeRestart + 1, 'popup renews silently after simulated browser restart');
-    check(await page.evaluate(() => !!fixtureSession.token), 'popup receives renewed token');
+    check(await page.evaluate(() => !!window.fixtureProfileSession().token), 'popup receives renewed token');
     await page.goto('https://auth-companion.test/options.html'); await ready();
-    await page.evaluate(() => chrome.storage.session.set({tokenExpiresAt: 1}));
+    await page.evaluate(() => chrome.storage.session.set({[`profileSession:${fixtureLocal.connectionProfiles.activeProfileId}`]:{...window.fixtureProfileSession(),tokenExpiresAt:1}}));
     const beforeConcurrent = tokenRequests;
     await page.evaluate(async () => {
         const api = await import('/api.js');
@@ -114,14 +116,14 @@ export default async function authBrowserSmoke(page, files) {
     });
     check(tokenRequests === beforeConcurrent + 1, 'concurrent expired-token requests share one renewal');
     await click('clear');
-    check(await page.evaluate(() => !fixtureSession.token && !!fixtureLocal.credentialVault), 'clear token preserves saved credential');
+    check(await page.evaluate(() => !window.fixtureProfileSession().token && !!window.fixtureProfile().credentialVault), 'clear token preserves saved credential');
     await click('test');
-    check(await page.evaluate(() => !!fixtureSession.token), 'next API request renews after clear');
+    check(await page.evaluate(() => !!window.fixtureProfileSession().token), 'next API request renews after clear');
     await page.locator('#clientId').fill('other-client'); await click('generate');
     check((await page.locator('#feedback').innerText()).includes('matching'), 'credential bound to client identity');
     await page.reload(); await ready();
     page.once('dialog', dialog => dialog.accept()); await click('forgetSecret');
-    check(await page.evaluate(() => !fixtureLocal.credentialVault && !fixtureSession.token), 'forget clears credential and token');
+    check(await page.evaluate(() => !window.fixtureProfile().credentialVault && !window.fixtureProfileSession().token), 'forget clears credential and token');
     const beforeForget = tokenRequests; await click('test');
     check(tokenRequests === beforeForget, 'forget prevents automatic renewal');
     await page.locator('#clientSecret').fill('fixture-secret'); await click('generate');
@@ -129,13 +131,13 @@ export default async function authBrowserSmoke(page, files) {
     check(await page.evaluate(() => !JSON.stringify(fixtureLocal).includes('fixture-secret') && !JSON.stringify(fixtureSession).includes('fixture-secret')), 'one-time secret not retained');
     await click('clear'); await page.locator('.manual-token > summary').click();
     await page.locator('#token').fill('manual-token'); await click('save');
-    check(await page.evaluate(() => fixtureSession.token === 'manual-token' && !fixtureSession.tokenExpiresAt), 'manual token supported');
-    await page.evaluate(() => chrome.storage.local.set({credentialVault: {version: 1, id: 'old', clientId: 'fixture-client', orgId: 'org', ciphertext: 'legacy-encrypted'}}));
+    check(await page.evaluate(() => window.fixtureProfileSession().token === 'manual-token' && !window.fixtureProfileSession().tokenExpiresAt), 'manual token supported');
+    await page.evaluate(() => chrome.storage.local.set({connectionProfiles:{...fixtureLocal.connectionProfiles,profiles:fixtureLocal.connectionProfiles.profiles.map(p=>p.id===fixtureLocal.connectionProfiles.activeProfileId ? {...p,credentialVault:{version:1,id:'old',clientId:'fixture-client',orgId:'org',ciphertext:'legacy-encrypted'}} : p)}}));
     await page.reload(); await ready();
     check((await page.locator('#vaultStatus').innerText()).includes('Re-enter your Adobe Client Secret'), 'locked old vault gets one-time replacement instructions');
-    check(await page.evaluate(() => fixtureLocal.credentialVault.version === 1), 'old vault remains until replaced');
+    check(await page.evaluate(() => window.fixtureProfile().credentialVault.version === 1), 'old vault remains until replaced');
     await page.locator('#clientSecret').fill('fixture-secret'); await page.locator('#rememberSecret').check(); await click('saveVault');
-    check(await page.evaluate(() => fixtureLocal.credentialVault.version === 2), 'old vault replaced after explicit save');
+    check(await page.evaluate(() => window.fixtureProfile().credentialVault.version === 2), 'old vault replaced after explicit save');
     // The primary flow composes existing operations without implicit storage.
     page.once('dialog', dialog => dialog.accept()); await click('forgetSecret');
     await page.locator('#clientSecret').fill('fixture-secret');
@@ -143,19 +145,26 @@ export default async function authBrowserSmoke(page, files) {
     await click('connect');
     check((await page.locator('#feedback').innerText()).includes('Connected to program 1'), 'Connect verifies Cloud Manager access');
     check(apiRequests === beforeConnect + 1, 'Connect performs one verification request');
-    check(await page.evaluate(() => !fixtureLocal.credentialVault && !!fixtureSession.token), 'Connect without consent does not save the secret');
+    check(await page.evaluate(() => !window.fixtureProfile().credentialVault && !!window.fixtureProfileSession().token), 'Connect without consent does not save the secret');
     check(await page.locator('#clientSecret').inputValue() === '', 'Connect clears one-time secret');
     await page.locator('#clientSecret').fill('fixture-secret'); await page.locator('#rememberSecret').check();
     await click('connect');
-    check(await page.evaluate(() => fixtureLocal.credentialVault.version === 2), 'Connect saves with explicit consent');
+    check(await page.evaluate(() => window.fixtureProfile().credentialVault.version === 2), 'Connect saves with explicit consent');
     check(!await page.locator('#rememberSecret').isChecked(), 'Connect resets consent after saving');
-    const savedId = await page.evaluate(() => fixtureLocal.credentialVault.id);
+    const savedId = await page.evaluate(() => window.fixtureProfile().credentialVault.id);
     await page.locator('#rememberSecret').check(); await click('connect');
-    check((await page.locator('#feedback').innerText()).includes('Connected') && await page.evaluate(() => fixtureLocal.credentialVault.id) === savedId, 'Connect reuses a saved credential with empty input and checked consent');
+    check((await page.locator('#feedback').innerText()).includes('Connected') && await page.evaluate(() => window.fixtureProfile().credentialVault.id) === savedId, 'Connect reuses a saved credential with empty input and checked consent');
     await page.route('https://cloudmanager.adobe.io/**', route => route.fulfill({status:403,contentType:'application/json',body:'{"message":"Access denied"}'}));
     await click('connect');
     check((await page.locator('#feedback').innerText()).includes('Connection failed') && !(await page.locator('#feedback').innerText()).includes('verified'), 'Connect reports API failure rather than token generation as success');
     check(await page.locator('#connect').isEnabled(), 'Connect recovers controls after API failure');
     check(errors.length === 0, `no browser runtime errors: ${errors.join(', ')}`);
+    await page.locator('#clientId').fill('');await click('connect');
+    check(await page.locator('#clientId').evaluate(input=>input===document.activeElement&&input.getAttribute('aria-invalid')==='true'),'missing connection field receives focus and an accessible error');
+    await page.locator('#clientId').fill('corrected');
+    check(await page.locator('#clientId').getAttribute('aria-invalid')===null,'editing clears field validation marker');
+    check(await page.locator('.profile-settings').evaluate(section=>section.compareDocumentPosition(document.querySelector('.appearance-settings'))&window.Node.DOCUMENT_POSITION_FOLLOWING),'program setup appears before appearance preferences');
+    await page.setViewportSize({width:380,height:600});
+    check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Settings fits a narrow screen');
     return {checks, tokenRequests, apiRequests};
 }

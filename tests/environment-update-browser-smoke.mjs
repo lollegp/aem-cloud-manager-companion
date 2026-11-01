@@ -11,7 +11,7 @@ export default async function environmentUpdateSmoke(page,files) {
     await page.evaluate(()=>{localStorage.clear();sessionStorage.clear();});
     await page.addInitScript(()=>{
         const local={clientId:'client',orgId:'org',programId:'1'},session=JSON.parse(sessionStorage.getItem('fixture')||'{"token":"token"}');
-        const storage=data=>({get:async keys=>Object.fromEntries(keys.filter(key=>key in data).map(key=>[key,data[key]])),set:async values=>{Object.assign(data,values);sessionStorage.setItem('fixture',JSON.stringify(session));},remove:async key=>delete data[key]});
+        const storage=data=>({get:async keys=>Object.fromEntries(keys.filter(key=>key in data).map(key=>[key,data[key]])),set:async values=>{Object.assign(data,values);sessionStorage.setItem('fixture',JSON.stringify(session));},remove:async key=>{delete data[key];sessionStorage.setItem('fixture',JSON.stringify(session));}});
         window.chrome={storage:{local:storage(local),session:storage(session)},runtime:{openOptionsPage(){}}};window.confirm=()=>true;
     });
     const environments=[{id:'1',name:'Development',type:'dev',status:'ready'},{id:'2',name:'Production',type:'prod',status:'ready'}];
@@ -45,13 +45,16 @@ export default async function environmentUpdateSmoke(page,files) {
     await page.goto('https://environment-update.test/popup.html');await ready();
     await tab('Variables');
     check(await page.locator('.select-control > select').evaluateAll(selects=>selects.every(select=>getComputedStyle(select).appearance==='none'&&parseFloat(getComputedStyle(select).paddingRight)>=34)),'all dropdowns reserve padding for their chevrons');
-    await page.locator('.variable-row > summary').first().click();
-    await page.getByLabel('Value for RUNMODES').fill('new-value');
-    await page.getByRole('button',{name:'Save changes'}).click();await ready();
+    await page.getByLabel('Import variable JSON file').setInputFiles({name:'variables.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,variables:[{name:'RUNMODES',type:'string',service:'author',value:'new-value'}]}))});
+    await page.waitForFunction(()=>document.querySelector('#message').textContent.startsWith('Imported into draft'));
+    check(await page.getByLabel('Value for RUNMODES').inputValue()==='new-value'&&patches===0,'imported value is editable without sending a PATCH before explicit Save');
+    await page.getByRole('button',{name:/^Save \d+ changes?$/}).click();await ready();
     check(patches===1&&(await page.locator('.variable-update-notice').innerText()).includes('update in progress'),'accepted save shows variable update progress');
     check(await page.locator('.variable-update-notice > .pill').innerText()==='Updating','Variables update ribbon is capitalized');
     check(await page.locator('.variable-update-notice').evaluate(element=>parseFloat(getComputedStyle(element).marginTop)>=12),'Variables status ribbon has top spacing');
-    check(await page.getByRole('button',{name:'Save changes'}).isDisabled(),'another save is blocked during environment update');
+    check(await page.locator('.action-save').isDisabled(),'another save is blocked during environment update');
+    check(await page.getByRole('searchbox',{name:'Search variables'}).isEnabled()&&await page.getByLabel('Filter variables by service').isEnabled(),'search and service filter remain available during updates');
+    check(await page.getByLabel('Value for RUNMODES').isDisabled()&&await page.getByRole('button',{name:'Add variable'}).isDisabled(),'variable mutation fields remain disabled during updates');
     check(await page.locator('.variable-row .pill.updating').isVisible(),'individual variable updating status is visible');
     check(!(await page.evaluate(()=>JSON.stringify(sessionStorage))).includes('new-value'),'pending update cache stores no variable values');
     await page.reload();await ready();
@@ -69,7 +72,7 @@ export default async function environmentUpdateSmoke(page,files) {
     await page.waitForFunction(()=>[...document.querySelectorAll('.pipeline-row .action-start')].every(button=>!button.disabled),{timeout:12000});
     check(starts===0,'polling completion never starts pipelines automatically');
     await tab('Variables');
-    check((await page.locator('.variable-update-notice').innerText()).includes('Ready'),'completed variable update displays ready state');
+    check(await page.locator('.variable-update-notice').count()===0&&await page.getByLabel('Value for RUNMODES').isEnabled(),'completed update removes warning and restores editing');
     await tab('Pipelines');await group('Development').locator(':scope > .environment-summary').click();await ready();
     // If already open after a tab switch, leave it open.
     if(!await group('Development').evaluate(element=>element.open)){await group('Development').locator(':scope > .environment-summary').click();await ready();}

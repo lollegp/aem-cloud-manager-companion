@@ -22,7 +22,7 @@ Manage Adobe Cloud Manager environments, deployment pipelines and runtime variab
 
 ## Use, transfer and retention
 
-Data is used only for the single purpose. Requests are sent directly to the necessary Adobe hosts over HTTPS. There is no developer backend or sale of data. Profile settings persist locally. Tokens and display snapshots stay in Chrome session storage. Variables and unsaved drafts remain in popup memory. See the canonical `privacy.html` for exact credential retention and migration behavior.
+Data is used only for the single purpose. Requests are sent directly to the necessary Adobe hosts over HTTPS. There is no developer backend or sale of data. Profile settings persist locally. Tokens and display snapshots stay in Chrome session storage. Drafts, including replacement secrets, survive popup closure in memory-backed Chrome session storage until Save or Discard. Chrome restart or extension reload also clears drafts. Drafts are not written to local or sync storage. See the canonical `privacy.html` for exact credential retention and migration behavior.
 
 Before checking dashboard certifications, the publisher must verify that all code and organizational practices match the promises on permitted transfers, unrelated uses, advertising and creditworthiness. Do not claim Store approval or complete compliance from this worksheet alone.
 

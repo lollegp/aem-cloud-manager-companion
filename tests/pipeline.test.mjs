@@ -128,3 +128,17 @@ test('production pipeline header shows Waiting for a live approval even while AP
     assert.equal(model.pipelineStatusLabel({status:'BUSY'},{status:'FINISHED',_embedded:execution._embedded},true),'Running');
     assert.equal(model.pipelineStatusLabel({status:'IDLE'},null,true),'Idle');
 });
+
+test('batch starts every independent pipeline before waiting for completion', async () => {
+    const started = [], releases = [];
+    const pending = model.runPipelineBatch([{id:1},{id:2},{id:3}], async pipeline => {
+        started.push(pipeline.id);
+        await new Promise(resolve => releases.push(resolve));
+        return 'Rejected';
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    const observed = [...started];
+    releases.forEach(resolve => resolve());
+    assert.deepEqual(observed, [1,2,3]);
+    await pending;
+});

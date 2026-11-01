@@ -1,12 +1,16 @@
+import {submitOperation,pendingVariableState} from './operations.js';
+import {profileCommand, fillProfileSelect, PROFILE_KEY, profilePrefix, saveProfilePreference} from './profiles.js';
 import {loadSnapshot, saveSnapshot, snapshotKey, projectPipeline, projectExecution} from './cache.js';
 import {historyPanel} from './history.js';
-import {request, settings, abortable, pathFor, embedded, link, safeAPIPath} from './api.js';
-import {buildVariablePatch, variableDisplayValue, variableUpdateState, environmentBlocksStart} from './variables.js';
-import {aliasKey, environmentIds, groupPipelines, pipelineKind, stopAction, runPipelineBatch, canStopPipeline, approvalAction, orderEnvironments, executionStatusLabel, pipelineStatusLabel} from './pipeline.js';
+import {request, settings, abortable, pathFor, embedded, link, safeAPIPath, usesBackground} from './api.js';
+import {buildVariablePatch, variableUpdateState, environmentBlocksStart, exportVariables, mergeVariableImport, variableDraftKey, loadVariableDraft, saveVariableDraft} from './variables.js';
+import {aliasKey, environmentIds, groupPipelines, pipelineKind, stopAction, canStopPipeline, approvalAction, orderEnvironments, executionStatusLabel, pipelineStatusLabel} from './pipeline.js';
 
 const $ = id => document.getElementById(id);
+document.body.classList.toggle('extension-popup',location.protocol==='chrome-extension:');
+let backgroundPending = false, backgroundStatusTimer, backgroundRefreshNeeded = false;
 let tab = 'pipelines', environments = [], pipelines = [], selectedEnvironment = '';
-let aliases = {}, connection = {}, busy = false;
+let aliases = {}, connection = {}, busy = false, switchingProfile = false, initializingProfiles = true, pendingProfileNavigation = false;
 let historyController = new AbortController();
 let environmentOrder = [];
 let hiddenEnvironments = new Set();
@@ -14,6 +18,7 @@ const expandedEnvironments = new Set();
 let environmentPollTimer, environmentPollController;
 let activeRead = null, navigationId = 0, environmentRead = null, environmentReadRevision = 0;
 const variableDrafts = new Map();
+const variableFilters = new Map();
 let catalogUpdatedAt = 0, snapshotIdentity = '', viewGeneration = 0;
 let executionRecords = Object.create(null), cacheWarning = false, connectionChanged = false;
 const groupViews = new Map(), pipelineReads = new Map(), activePipelineActions = new Set();
@@ -70,6 +75,7 @@ function line() {
 function setMessage(msg, err = false) {
     $('message').textContent = msg;
     $('message').className = `section ${err ? 'error' : 'muted'}`;
+    $('message').setAttribute('role',err?'alert':'status');
 }
 
 function error(e) {
@@ -86,10 +92,10 @@ function restoreControl(control, disabled) {
 }
 
 async function run(fn, reading = false) {
-    if (busy) return false;
+    if (busy || (backgroundPending && !reading)) return false;
     environmentPollController?.abort();
     busy = true;
-    const controls = [...document.querySelectorAll(reading ? '#content button, #content input, #content select, #refresh' : 'button:not(#settings), input, select')];
+    const controls = [...document.querySelectorAll(reading ? '#content button, #content input, #content textarea, #content select, #refresh' : 'button:not(#settings), input, textarea, select')];
     const disabled = controls.map(control => control.disabled);
     controls.forEach(control => { control.disabled = true; });
     let completed=false;
@@ -117,6 +123,9 @@ async function run(fn, reading = false) {
         }
         controls.forEach((control,index) => restoreControl(control,disabled[index]));
         if (!connectionChanged) syncEnvironmentIndicators();
+        if(usesBackground())void refreshBackgroundStatus();
+        if(backgroundRefreshNeeded && !initializingProfiles){backgroundRefreshNeeded=false;queueMicrotask(()=>navigate(true));}
+        if(pendingProfileNavigation){pendingProfileNavigation=false;queueMicrotask(()=>navigate());}
     }
 }
 
@@ -152,17 +161,6 @@ function variableStatusRibbon(status) {
     return ribbon;
 }
 
-function variableTooltip(text) {
-    const value = node('span', text, 'variable-preview');
-    const wrapper = node('span','','variable-preview-wrap');
-    wrapper.dataset.tooltip = String(text ?? '');
-    wrapper.setAttribute('tabindex','0');
-    wrapper.setAttribute('role','note');
-    wrapper.setAttribute('aria-label',String(text ?? ''));
-    wrapper.append(value);
-    return wrapper;
-}
-
 function executionRibbon(execution, stale = false) {
     const label = executionStatusLabel(execution);
     const status = pill(execution.status);
@@ -189,16 +187,16 @@ function confirmAction(message) {
 }
 
 function environmentLabel(env) {
-    const alias = aliases[aliasKey(connection.orgId, connection.programId, env.id)];
+    const alias = aliases[profilePrefix(connection.profileId)+aliasKey(connection.orgId, connection.programId, env.id)];
     return alias ? `${alias} · ${env.name || env.id}` : (env.name || `Environment ${env.id}`);
 }
 
 function environmentOrderKey() {
-    return `environmentOrder:${JSON.stringify([String(connection.orgId), String(connection.programId)])}`;
+    return `${profilePrefix(connection.profileId)}environmentOrder:${JSON.stringify([String(connection.orgId), String(connection.programId)])}`;
 }
 
 function hiddenEnvironmentsKey() {
-    return `hiddenPipelineEnvironments:${JSON.stringify([String(connection.orgId), String(connection.programId)])}`;
+    return `${profilePrefix(connection.profileId)}hiddenPipelineEnvironments:${JSON.stringify([String(connection.orgId), String(connection.programId)])}`;
 }
 
 function environmentOrderControls(env) {
@@ -210,7 +208,7 @@ function environmentOrderControls(env) {
             const target = index + offset;
             if (index < 0 || target < 0 || target >= ids.length) return;
             [ids[index], ids[target]] = [ids[target], ids[index]];
-            await chrome.storage.local.set({[environmentOrderKey()]: ids});
+            await saveProfilePreference(connection,environmentOrderKey(),ids);
             await updateLocalPreferences();
         }));
         button.setAttribute('aria-label', `${label.slice(2)} environment ${environmentLabel(env)}`);
@@ -250,7 +248,7 @@ async function listAll(path, key, signal, quiet = false) {
 }
 
 async function loadEnvironmentPreferences(programId, signal) {
-    const keys = environments.map(env => aliasKey(connection.orgId, programId, env.id));
+    const keys = environments.map(env => profilePrefix(connection.profileId)+aliasKey(connection.orgId, programId, env.id));
     keys.push(environmentOrderKey(), hiddenEnvironmentsKey());
     aliases = await abortable(chrome.storage.local.get(keys), signal);
     environmentOrder = Array.isArray(aliases[environmentOrderKey()]) ? aliases[environmentOrderKey()] : [];
@@ -266,23 +264,37 @@ async function loadEnvironmentPreferences(programId, signal) {
     selectedEnvironment = environments.some(env => String(env.id) === selectedEnvironment)
         ? selectedEnvironment : String(environments[0]?.id || '');
     sel.value = selectedEnvironment;
-    sel.classList.toggle('hidden', tab !== 'variables');
+    sel.classList.toggle('hidden', tab !== 'variables' || !environments.length);
+}
+
+async function parallelReads(items, read) {
+    let cursor = 0;
+    const results = await Promise.allSettled(Array.from({length:Math.min(4,items.length)},async () => {
+        while (cursor < items.length) await read(items[cursor++]);
+    }));
+    // Wait for every reader before callers restore previous state after failure.
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
 }
 
 async function loadPipelines(programId, signal) {
-    pipelines = await listAll(pathFor(programId, '/pipelines'), 'pipelines', signal);
+    const fresh = await listAll(pathFor(programId, '/pipelines'), 'pipelines', signal);
     // List responses may omit phases. Resolve details before assigning a group.
-    for (const pipeline of pipelines) {
+    await parallelReads(fresh, async pipeline => {
         if (!Array.isArray(pipeline.phases) || pipelineKind(pipeline).className === 'unknown') {
             try {
                 setMessage(`Loading details for pipeline ${pipeline.name || pipeline.id}...`);
-                Object.assign(pipeline, await request(pathFor(programId, `/pipeline/${encodeURIComponent(pipeline.id)}`), 'GET', undefined, {signal}));
+                const details = await request(pathFor(programId, `/pipeline/${encodeURIComponent(pipeline.id)}`), 'GET', undefined, {signal});
+                signal.throwIfAborted();
+                Object.assign(pipeline, details);
             } catch (e) {
                 if (signal?.aborted) throw signal.reason;
                 pipeline.detailsError = e.message;
             }
         }
-    }
+    });
+    signal.throwIfAborted();
+    pipelines = fresh;
 }
 
 function mergeEnvironmentList(fresh) {
@@ -322,6 +334,7 @@ async function readVariableStatus(id, signal, config = connection) {
     const environment = environments.find(item => String(item.id) === String(id));
     if (!environment) throw new Error('Environment no longer available. Refresh before continuing.');
     const variables = embedded(data,'variables');
+    if(usesBackground() && environment.variableUpdateStatus!=='updating')Object.assign(environment,await pendingVariableState(config,id));
     Object.assign(environment,variableUpdateState(environment,variables));
     return variables;
 }
@@ -337,9 +350,9 @@ function syncEnvironmentIndicators() {
         updateGroupActions(state);
         for (const [id,card] of state.rows || []) {
             const start = card.querySelector('.action-start');
-            if (start) start.disabled = busy || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));
+            if (start) start.disabled = busy || backgroundPending || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));
             const approve=card.querySelector('.action-approve');
-            if(approve)approve.disabled=busy || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));
+            if(approve)approve.disabled=busy || backgroundPending || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));
         }
     }
     for (const card of $('content').querySelectorAll('[data-environment-id]')) {
@@ -364,7 +377,7 @@ function scheduleEnvironmentPoll() {
             const pending = environments.filter(env=>env.variableUpdateStatus === 'updating' || String(env.status).toLowerCase() === 'updating').map(env=>String(env.id));
             await refreshEnvironmentList(signal,config);
             const variables=new Map();
-            for (const id of pending) variables.set(id,await readVariableStatus(id,signal,config));
+            await parallelReads(pending, async id => variables.set(id,await readVariableStatus(id,signal,config)));
             signal.throwIfAborted();
             syncEnvironmentIndicators();
             await persistSnapshot(signal);
@@ -413,17 +426,20 @@ async function refreshView(signal, force) {
     const identity = snapshotKey(s);
     if (identity !== snapshotIdentity) {
         environments = []; pipelines = []; executionRecords = Object.create(null);
-        expandedEnvironments.clear(); variableDrafts.clear(); catalogUpdatedAt = 0;
+        expandedEnvironments.clear(); selectedEnvironment = ''; aliases = {}; catalogUpdatedAt = 0;
+        $('environment').replaceChildren();
     }
     snapshotIdentity = identity;
     connection = s;
+    if(s.profileId)$('programProfile').value=s.profileId;
     connectionChanged = false;
-    $('environment').classList.toggle('hidden', tab !== 'variables');
+    $('environment').classList.toggle('hidden', tab !== 'variables' || !environments.length);
+    $('programLabel').textContent=s.profileName || (s.programId ? `Program ${s.programId}` : 'Configure connection to begin');
     if (!s.programId) {
-        $('content').replaceChildren(node('p', 'Configure your Adobe credentials and program ID in Settings.'));
+        $('content').replaceChildren(node('h2','Connect your first program'),node('p', 'Add your Adobe credentials and program ID to get started.'),btn('Open Settings',()=>chrome.runtime.openOptionsPage(),'primary'));
         return;
     }
-    $('programLabel').textContent = `Program ${s.programId}`;
+    $('programLabel').textContent = `${s.profileName ? `${s.profileName} · ` : ''}Program ${s.programId}`;
     if (!catalogUpdatedAt && !force) {
         const cached = await loadSnapshot(s, signal);
         if (cached?.updatedAt) {
@@ -436,10 +452,13 @@ async function refreshView(signal, force) {
     if (reloadCatalog) {
         // Keep the last known catalog if either list request fails.
         const previousEnvironments = environments, previousPipelines = pipelines, previousUpdatedAt = catalogUpdatedAt;
+        const catalogStartedAt=Date.now();
         try {
-            await refreshEnvironmentList(signal,s);
-            await loadPipelines(s.programId, signal);
-            catalogUpdatedAt = Date.now();
+            await parallelReads([
+                () => refreshEnvironmentList(signal,s),
+                () => loadPipelines(s.programId,signal)
+            ], read => read());
+            catalogUpdatedAt = catalogStartedAt;
             const liveIds = new Set(pipelines.map(p => String(p.id)));
             executionRecords = Object.fromEntries(Object.entries(executionRecords).filter(([id]) => liveIds.has(id)));
             await persistSnapshot(signal);
@@ -453,7 +472,7 @@ async function refreshView(signal, force) {
         await persistSnapshot(signal);
     }
     if(tab==='environments') {
-        for(const environment of environments.filter(env=>env.variableUpdateStatus))await readVariableStatus(environment.id,signal,s);
+        await parallelReads(environments.filter(env=>env.variableUpdateStatus), environment => readVariableStatus(environment.id,signal,s));
         await persistSnapshot(signal);
     }
     await loadEnvironmentPreferences(s.programId, signal);
@@ -462,7 +481,7 @@ async function refreshView(signal, force) {
     if (tab === 'pipelines') {
         renderPipelines(s.programId);
         if (force) {
-            for (const state of groupViews.values()) if (state.section.open) await refreshGroup(state,signal);
+            await parallelReads([...groupViews.values()].filter(state=>state.section.open), state => refreshGroup(state,signal));
         }
     }
     if (tab === 'environments') renderEnvironments();
@@ -537,7 +556,7 @@ function targetLabels(pipeline) {
 }
 
 async function groupAction(pid, group, action, singlePipeline, expectedExecutionId) {
-    if (busy || connectionChanged || groupViews.get(group.id)?.loading) return;
+    if (busy || backgroundPending || connectionChanged || groupViews.get(group.id)?.loading) return;
     const actionConfig = connection, signal = historyController.signal, generation = viewGeneration;
     const latestSettings = await abortable(settings(),signal);
     if (generation !== viewGeneration || snapshotKey(latestSettings) !== snapshotIdentity) {
@@ -552,66 +571,20 @@ async function groupAction(pid, group, action, singlePipeline, expectedExecution
     const title = group.environment ? environmentLabel(group.environment) : group.name;
     const details = candidates.map(p => `${p.name || p.id} → ${targetLabels(p).join(', ') || 'No deployment target'}`).join('\n');
     const actionLabel = {start: 'Start', stop: 'Stop', promote: 'Approve', reject: 'Reject'}[action];
-    if (!confirmAction(`${actionLabel.toUpperCase()} ${candidates.length} pipeline${candidates.length === 1 ? '' : 's'} in ${title}?\n\n${details}\n\nActions affect each entire pipeline, including all listed environments. Keep the popup open until results appear.`)) return;
+    if (!confirmAction(`${actionLabel.toUpperCase()} ${candidates.length} pipeline${candidates.length === 1 ? '' : 's'} in ${title}?\n\n${details}\n\nActions affect each entire pipeline, including all listed environments. You can close the popup; this action continues in the background.`)) return;
     await run(async () => {
-        const results = await runPipelineBatch(candidates, async pipeline => {
-            const loadingId = String(pipeline.id);
-            activePipelineActions.add(loadingId); syncPipelineLoading(loadingId);
-            try {
-            const base = pathFor(pid, `/pipeline/${encodeURIComponent(pipeline.id)}`);
-            signal.throwIfAborted();
-            const fresh = await request(base,'GET',undefined,{signal,expectedConfig:actionConfig});
-            if (JSON.stringify(environmentIds(fresh).sort()) !== JSON.stringify(environmentIds(pipeline).sort())) return 'Skipped: deployment targets changed; refresh and review';
-            if (['start','promote'].includes(action)) {
-                await refreshEnvironmentList(signal,actionConfig);
-                for (const id of environmentIds(fresh)) {
-                    await readVariableStatus(id,signal,actionConfig);
-                    const environment=environments.find(env=>String(env.id)===id);
-                    if (environmentBlocksStart(environment)) {
-                        await persistSnapshot(signal);syncEnvironmentIndicators();scheduleEnvironmentPoll();
-                        return `Skipped: ${environmentLabel(environment)} is updating or unavailable`;
-                    }
-                }
-            }
-            if (decision) {
-                const execution = await currentExecution(pid,fresh,signal,actionConfig,isProduction(group.environment));
-                const expected = expectedExecutionId || group.approvals.get(String(pipeline.id));
-                if (String(execution?.id) !== String(expected)) return 'Skipped: execution changed; refresh and review';
-                const steps = executionStepStates(execution).filter(step => step.status === 'WAITING' && step.action === 'approval');
-                if (steps.length !== 1) return 'Skipped: no single waiting production approval';
-                const operation = approvalAction(steps[0], action === 'promote');
-                if (!operation) return 'Skipped: approval action unavailable';
-                await request(operation.path,'PUT',operation.body,{signal,expectedConfig:actionConfig});
-                return `${actionLabel} requested`;
-            }
-            if (action === 'start') {
-                if (fresh.status !== 'IDLE') return 'Skipped: no longer idle';
-                await request(base + '/execution','PUT',undefined,{signal,expectedConfig:actionConfig});
-                return 'Start requested';
-            }
-            if (!canStopPipeline(fresh)) return 'Skipped: no longer running';
-            const execution = await currentExecution(pid,pipeline,signal,actionConfig,isProduction(group.environment));
-            const expected = expectedExecutionId || group.executions?.get(String(pipeline.id));
-            if (!expected || String(execution?.id) !== String(expected)) return 'Skipped: execution changed; refresh and review';
-            const stops = executionStepStates(execution).map(stopAction).filter(Boolean);
-            if (!stops.length) return 'Skipped: no cancellable step available';
-            const failures = [];
-            for (const stop of stops) {
-                try { await request(stop.path,'PUT',stop.body,{signal,expectedConfig:actionConfig}); }
-                catch (e) { failures.push(e.message); }
-            }
-            if (failures.length) throw new Error(`Stop incomplete: ${failures.join('; ')}`);
-            return 'Stop requested';
-            } finally { activePipelineActions.delete(loadingId); syncPipelineLoading(loadingId); }
-        });
-        if (signal.aborted || generation !== viewGeneration) throw new Error('Connection settings changed. No further pipeline actions were sent. Refresh before continuing.');
+        for(const pipeline of candidates){activePipelineActions.add(String(pipeline.id));syncPipelineLoading(String(pipeline.id));}
+        let results;
+        try {results = await submitOperation('pipelines',{
+            action,environmentId:group.id,pipelines:candidates,
+            executions:Object.fromEntries(candidates.map(pipeline=>[String(pipeline.id),expectedExecutionId || (decision?group.approvals:group.executions)?.get(String(pipeline.id))]))
+        },actionConfig);}finally{
+            for(const pipeline of candidates){activePipelineActions.delete(String(pipeline.id));syncPipelineLoading(String(pipeline.id));}
+        }
+        if (signal.aborted || generation !== viewGeneration) throw new Error('View changed while the background action completed. Refresh to check its result.');
         let refreshError = '';
         try {
-            for (const state of groupViews.values()) {
-                if (state.section.open && state.group.pipelines.some(p => candidates.some(candidate => String(candidate.id) === String(p.id)))) {
-                    await refreshGroup(state);
-                }
-            }
+            await parallelReads([...groupViews.values()].filter(state=>state.section.open && state.group.pipelines.some(p=>candidates.some(candidate=>String(candidate.id)===String(p.id)))),state=>refreshGroup(state));
         } catch (e) { refreshError = ` Refresh failed: ${e.message}`; }
         const summary = node('div', '', 'batch-results');
         summary.setAttribute('role', 'status');
@@ -714,7 +687,7 @@ function updateGroupActions(state) {
         const record=executionRecords[String(pipeline.id)];
         if(isProduction(group.environment)&&record?.execution?.id&&!record.historical&&!record.stale&&executionStepStates(record.execution).some(step=>step.status==='WAITING'&&step.action==='approval'))group.approvals.set(String(pipeline.id),record.execution.id);
     }
-    buttons.start.disabled = busy || !!state.loading || !group.pipelines.some(p => p.status === 'IDLE' && !pipelineEnvironmentBlocked(p));
+    buttons.start.disabled = busy || backgroundPending || !!state.loading || !group.pipelines.some(p => p.status === 'IDLE' && !pipelineEnvironmentBlocked(p));
     let notice=state.heading.querySelector('.environment-update-notice');
     if (!notice) {notice=node('div','','muted environment-update-notice');state.heading.append(notice);}
     const blocked=group.pipelines.some(pipelineEnvironmentBlocked);
@@ -731,10 +704,10 @@ function updateGroupActions(state) {
     if(!summaryStatus){summaryStatus=node('span','','pill environment-overview-status');state.section.querySelector('.environment-summary').append(summaryStatus);}
     const waiting=group.pipelines.filter(p=>pipelineStatusLabel(p,executionRecords[String(p.id)]?.execution,isProduction(group.environment))==='Waiting').length;
     summaryStatus.textContent=blocked?'Blocked':waiting?`${waiting} waiting`:'';summaryStatus.hidden=!summaryStatus.textContent;
-    buttons.stop.disabled = busy || !!state.loading || !group.pipelines.some(canStopPipeline);
+    buttons.stop.disabled = busy || backgroundPending || !!state.loading || !group.pipelines.some(canStopPipeline);
     if (buttons.promote) {
-        buttons.promote.disabled = busy || !!state.loading || !group.pipelines.some(p=>group.approvals.has(String(p.id))&&!pipelineEnvironmentBlocked(p));
-        buttons.reject.disabled = busy || !!state.loading || !group.approvals.size;
+        buttons.promote.disabled = busy || backgroundPending || !!state.loading || !group.pipelines.some(p=>group.approvals.has(String(p.id))&&!pipelineEnvironmentBlocked(p));
+        buttons.reject.disabled = busy || backgroundPending || !!state.loading || !group.approvals.size;
     }
 }
 
@@ -994,7 +967,7 @@ function renderEnvironments() {
         c.dataset.environmentId=String(env.id);
         c.append(environmentOrderControls(env));
         c.append(node('p', `Type: ${env.type || 'N/A'} · Region: ${env.region || 'N/A'} · ID: ${env.id}`, 'muted'));
-        const key = aliasKey(connection.orgId, connection.programId, env.id);
+        const key = profilePrefix(connection.profileId)+aliasKey(connection.orgId, connection.programId, env.id);
         const alias = node('input');
         alias.value = aliases[key] || '';
         alias.placeholder = 'Local environment alias';
@@ -1003,7 +976,7 @@ function renderEnvironments() {
         const row = node('div', '', 'alias-row');
         row.append(alias, btn('Save alias', () => run(async () => {
             const value = alias.value.trim();
-            if (value) await chrome.storage.local.set({[key]: value});
+            if (value) await saveProfilePreference(connection,key,value);
             else await chrome.storage.local.remove(key);
             await updateLocalPreferences();
         })));
@@ -1019,7 +992,7 @@ function renderEnvironments() {
                 const next = new Set(hiddenEnvironments);
                 if (hidden) next.add(String(env.id));
                 else next.delete(String(env.id));
-                await chrome.storage.local.set({[hiddenEnvironmentsKey()]: [...next]});
+                await saveProfilePreference(connection,hiddenEnvironmentsKey(),[...next]);
                 await updateLocalPreferences();
             });
             if (!saved) visibility.checked = hiddenEnvironments.has(String(env.id));
@@ -1039,12 +1012,13 @@ async function renderVariables(pid, signal, loadedVariables) {
         content.append(node('p', 'No environments found.'));
         return;
     }
-    const ep = pathFor(pid, `/environment/${encodeURIComponent(selectedEnvironment)}/variables`);
     setMessage('Loading environment variables...');
     const freshVariables = loadedVariables || await readVariableStatus(selectedEnvironment,signal);
     signal.throwIfAborted();
-    const draftKey=JSON.stringify([snapshotIdentity,selectedEnvironment]);
-    const draft=variableDrafts.get(draftKey);
+    const draftKey=variableDraftKey(snapshotIdentity,selectedEnvironment);
+    const draft=await loadVariableDraft(draftKey);
+    signal.throwIfAborted();
+    if(draft)variableDrafts.set(draftKey,draft);else variableDrafts.delete(draftKey);
     const vars=draft?.original || freshVariables;
     content.replaceChildren();
     const environment=environments.find(env=>String(env.id)===selectedEnvironment);
@@ -1053,35 +1027,22 @@ async function renderVariables(pid, signal, loadedVariables) {
     const notice=node('div','','variable-update-notice');notice.setAttribute('role','status');
     if(updating){notice.append(variableStatusRibbon('updating'),node('p','Variable update in progress. Pipeline starts are blocked. Status refreshes automatically.'));}
     else if(failed){notice.append(variableStatusRibbon('failed'),node('p','Variable update failed. Review the variable statuses and retry your changes.','error'));}
-    else notice.append(variableStatusRibbon('ready'));
-    content.append(notice);
+    if(updating||failed)content.append(notice);
     const editor = node('section','','variable-editor');
     editor.setAttribute('aria-label','Environment variables');
     const rows = [];
     const draftStatus=node('span','','muted variable-draft-status');
-    const serialize=()=>rows.map(item=>({originalName:item.originalName,originalService:item.originalService,name:item.name.value,value:item.value.value,type:item.type.value,service:item.service.value,remove:item.remove.checked,open:item.row.open}));
+    const resultStatus=node('span','','muted variable-result-status');resultStatus.setAttribute('role','status');
+    const empty=node('p','','muted variable-empty');
+    const list=node('div','','variable-list');
+    const serialize=()=>rows.map(item=>({originalName:item.originalName,originalService:item.originalService,name:item.name.value,value:item.value.value,type:item.type.value,service:item.service.value,remove:item.remove.checked}));
     const baseline=variable=>({originalName:variable.name,originalService:variable.service||'',name:variable.name,value:variable.type==='secretString'?'':String(variable.value??''),type:variable.type||'string',service:variable.service||'',remove:false});
-    const changed=edit=>{const original=vars.find(v=>v.name===edit.originalName&&(v.service||'')===edit.originalService);return !original||Object.entries(baseline(original)).some(([key,value])=>edit[key]!==value);};
-    const remember=()=>{
-        const edits=serialize(), count=edits.filter(changed).length;
-        draftStatus.textContent=`${count} unsaved change${count===1?'':'s'}`;
-        draftStatus.hidden=!count;
-        draftStatus.title='Drafts remain in memory while this popup stays open.';
-        const discard=editor.querySelector('.variable-discard');if(discard)discard.hidden=!count;
-        const save=editor.querySelector('.action-save');if(save)save.disabled=updating||!count;
-        rows.forEach((item,index)=>{
-            item.row.classList.toggle('has-changes',changed(edits[index]));
-            const preview=item.row.querySelector('.variable-preview-wrap');
-            if(preview){const text=item.type.value==='secretString'?'••••••••':item.value.value;preview.dataset.tooltip=text;preview.setAttribute('aria-label',text);preview.querySelector('.variable-preview').textContent=text;}
-        });
-        if(count)variableDrafts.set(draftKey,{original:vars,edits});else variableDrafts.delete(draftKey);
-    };
+    const originals=new Map(vars.map(variable=>[JSON.stringify([variable.name,variable.service||'']),baseline(variable)]));
+    const changed=edit=>{const original=originals.get(JSON.stringify([edit.originalName,edit.originalService]));return !original||Object.entries(original).some(([key,value])=>edit[key]!==value);};
     const makeSelect = (label, choices, selected) => {
-        const select = node('select');
-        select.setAttribute('aria-label',label);
+        const select = node('select');select.setAttribute('aria-label',label);
         for(const [value,text] of choices){const option=node('option',text);option.value=value;select.append(option);}
-        select.value=selected || '';
-        return select;
+        select.value=selected || '';return select;
     };
     const field = (label, control) => {
         const wrapper=node('label','', 'variable-field');
@@ -1089,43 +1050,101 @@ async function renderVariables(pid, signal, loadedVariables) {
         else wrapper.append(node('span',label),control);
         return wrapper;
     };
+    const filters=node('div','','variable-filters');
+    const search=node('input');search.type='search';search.placeholder='Search variables';search.setAttribute('aria-label','Search variables');
+    const savedFilter=variableFilters.get(draftKey);
+    search.value=savedFilter?.search || '';
+    const serviceFilter=makeSelect('Filter variables by service',[['*','All services'],['','Global'],['author','Author'],['publish','Publish'],['preview','Preview']],savedFilter?.service ?? '*');
+    const resize=items=>{
+        const values=items.filter(item=>!item.row.hidden&&item.value.tagName==='TEXTAREA').map(item=>item.value);
+        // Batch layout writes and reads so filtering does not force one layout per row.
+        values.forEach(value=>{value.style.height='auto';});
+        const heights=values.map(value=>Math.min(120,Math.max(36,value.scrollHeight+2)));
+        values.forEach((value,index)=>{value.style.height=`${heights[index]}px`;});
+    };
+    const filterRows=(resizeAll=true)=>{
+        const term=search.value.trim().toLowerCase(),edits=serialize();let visible=0,hiddenPending=0;
+        rows.forEach((item,index)=>{
+            item.row.hidden=!!item.originalName&&(!`${item.name.value} ${item.service.value}`.toLowerCase().includes(term)||(serviceFilter.value!=='*'&&item.service.value!==serviceFilter.value));
+            if(!item.row.hidden)visible++;else if(changed(edits[index]))hiddenPending++;
+        });
+        resultStatus.textContent=`${visible} of ${rows.length} variables${hiddenPending?` · ${hiddenPending} pending change${hiddenPending===1?'':'s'} hidden by filters`:''}`;
+        empty.hidden=visible>0;empty.textContent=rows.length?'No variables match these filters.':'No variables yet. Use Add variable to create one.';
+        variableFilters.set(draftKey,{search:search.value,service:serviceFilter.value});
+        if(resizeAll)resize(rows);
+    };
+    const remember=(persist=true,editedItem=null)=>{
+        const edits=serialize(), count=edits.filter(changed).length;
+        draftStatus.textContent=updating?'Update in progress':`${count} unsaved change${count===1?'':'s'}`;
+        draftStatus.title='Drafts survive popup closure until Save or Discard. Chrome restart or extension reload clears drafts.';
+        const discard=editor.querySelector('.variable-discard');if(discard)discard.disabled=updating||!count;
+        const save=editor.querySelector('.action-save');if(save){save.disabled=updating||!count;save.querySelector('span').textContent=count?`Save ${count} change${count===1?'':'s'}`:'Save changes';}
+        rows.forEach((item,index)=>{
+            if(editedItem&&item!==editedItem)return;
+            const dirty=changed(edits[index]);
+            item.row.classList.toggle('has-changes',dirty);item.row.classList.toggle('marked-for-removal',item.remove.checked);
+            item.status.textContent=item.remove.checked?'Marked for deletion':!item.originalName?'New':dirty?'Modified':'';
+            item.status.hidden=!item.status.textContent;item.undo.hidden=!dirty;
+            item.removeButton.hidden=item.remove.checked;
+            for(const control of item.fields.querySelectorAll('input,textarea,select'))control.disabled=updating||item.remove.checked;
+            item.undo.disabled=updating;item.removeButton.disabled=updating;
+            if(item.type.tagName)item.type.disabled=updating;
+        });
+        if(count)variableDrafts.set(draftKey,{original:vars,edits});else variableDrafts.delete(draftKey);
+        if(persist)void saveVariableDraft(draftKey,variableDrafts.get(draftKey)).catch(()=>setMessage('Draft could not be retained. Keep this popup open and retry your edit.',true));
+        filterRows(false);
+        resize(editedItem?[editedItem]:rows);
+    };
     const addRow = (variable, saved) => {
-        editor.querySelector('.variable-empty')?.remove();
-        const existing = !!variable;
-        const originalName = variable?.name || '';
-        const originalService = variable?.service || '';
-        const secret = variable?.type === 'secretString';
-        const row = node('details','','variable-row');row.open=saved?.open ?? !existing;
-        row.dataset.originalName = originalName;
-        row.dataset.originalService = originalService;
-        const name=node('input');name.value=originalName;name.placeholder='VARIABLE_NAME';name.autocomplete='off';name.setAttribute('aria-label',`Name${originalName?` for ${originalName}`:''}`);
-        const value=node('input');value.type=secret?'password':'text';value.value=variable ? (secret?'':String(variable.value??'')) : '';value.placeholder=secret?'Enter a replacement secret':'Variable value';value.autocomplete='off';value.setAttribute('aria-label',`Value${originalName?` for ${originalName}`:''}`);
-        const type=makeSelect(`Type${originalName?` for ${originalName}`:''}`,[['string','String'],['secretString','Secret']],variable?.type||'string');type.disabled=existing;type.title=existing?'Adobe does not allow changing a variable type. Delete and add it again.':'';
-        type.addEventListener('change',()=>{if(!existing)value.type=type.value==='secretString'?'password':'text';});
-        value.maxLength=type.value==='secretString'?499:2147483647;
-        type.addEventListener('change',()=>{value.maxLength=type.value==='secretString'?499:2147483647;});
-        const service=makeSelect(`Service${originalName?` for ${originalName}`:''}`,[['','All services'],['author','Author'],['publish','Publish'],['preview','Preview']],variable?.service||'');
-        const removeLabel=node('label','','variable-remove');const remove=node('input');remove.type='checkbox';remove.setAttribute('aria-label',`Remove ${originalName||'new variable'}`);removeLabel.append(remove,actionIcon('remove'),node('span','Remove'));
-        remove.disabled=!existing;remove.addEventListener('change',()=>row.classList.toggle('marked-for-removal',remove.checked));
-        const top=node('summary','','variable-row-heading');const title=node('strong',originalName ? `${originalName} · ${originalService || 'All services'}` : 'New variable');title.prepend(actionIcon(existing?'edit':'add'));top.append(title);
+        const existing=!!variable,originalName=variable?.name || '',originalService=variable?.service || '';
+        const row=node('div','','variable-row');row.dataset.originalName=originalName;row.dataset.originalService=originalService;
+        const name=node('input');name.value=saved?.name ?? originalName;name.placeholder='VARIABLE_NAME';name.autocomplete='off';name.setAttribute('aria-label',`Name${originalName?` for ${originalName}`:''}`);
+        const type=existing?{value:variable.type||'string'}:makeSelect('Type',[['string','String'],['secretString','Secret']],saved?.type||'string');
+        const service=makeSelect(`Service${originalName?` for ${originalName}`:''}`,[['','All services'],['author','Author'],['publish','Publish'],['preview','Preview']],saved?.service ?? originalService);
+        const remove={checked:saved?.remove || false};
+        const fields=node('div','','variable-fields');
+        const status=node('span','','variable-change-status');
+        const top=node('div','','variable-row-heading');
+        const typeLabel=node('span',type.value==='secretString'?'Secret':'String','pill variable-type');
+        typeLabel.title='Existing variable types cannot be changed.';
+        const valueField=node('label','','variable-field variable-value-field');
+        const item={row,name,type,service,originalName,originalService,remove,fields,status};
+        const setValue=(text)=>{
+            const secret=type.value==='secretString',value=node(secret?'input':'textarea');
+            if(secret){value.type='password';value.maxLength=499;}else value.rows=1;
+            value.value=text;value.placeholder=secret?'Enter a replacement secret':'Variable value';value.autocomplete='off';value.spellcheck=false;
+            value.setAttribute('aria-label',`Value${originalName?` for ${originalName}`:''}`);
+            valueField.replaceChildren(node('span',secret?'Replacement secret':'Value'),value);
+            item.value=value;
+            row.querySelector('.variable-secret-hint')?.remove();
+            if(secret&&existing)row.append(node('small','Leave blank to keep the existing secret.','variable-secret-hint'));
+        };
+        const discardRow=()=>{rows.splice(rows.indexOf(item),1);row.remove();remember();};
+        const undo=btn('Undo',()=>{
+            if(!existing){discardRow();return;}
+            if(remove.checked){remove.checked=false;}else{
+                const original=baseline(variable);name.value=original.name;service.value=original.service;setValue(original.value);
+            }
+            remember();
+        },'ghost variable-undo');item.undo=undo;
+        const removeButton=actionButton(existing?'Remove':'Remove draft',()=>{if(!existing){discardRow();return;}remove.checked=true;remember();},'remove','ghost');
+        removeButton.setAttribute('aria-label',existing?`Remove ${originalName}`:'Remove draft');item.removeButton=removeButton;
+        top.append(existing?typeLabel:field('Type',type),status);
         if(variable?.status)top.append(variableStatusRibbon(variable.status));
-        if(existing)top.append(removeLabel);
-        else top.append(actionButton('Remove draft',()=>{rows.splice(rows.findIndex(item=>item.row===row),1);row.remove();remember();if(!rows.length)editor.append(node('p','No variables yet. Use Add variable to create one.','muted variable-empty'));},'remove','ghost'));
-        const fields=node('div','','variable-fields');fields.append(field('Name',name),field(secret?'Replacement secret':'Value',value),field('Type',type),field('Service',service));
-        const valuePreview=variableTooltip(variableDisplayValue(variable));
-        if(existing){const preview=node('div','','variable-value');preview.append(valuePreview);top.append(preview);row.append(top,fields);}else row.append(top,fields);
-        if(existing || saved)editor.append(row);
-        else {editor.querySelector('.variable-actions').after(row);content.scrollTop=0;name.focus();}
-        rows.push({row,name,value,type,service,originalName,originalService,remove});
-        if(saved){name.value=saved.name;value.value=saved.value;type.value=saved.type;service.value=saved.service;remove.checked=saved.remove;row.classList.toggle('marked-for-removal',saved.remove);value.type=type.value==='secretString'?'password':'text';}
-        row.addEventListener('input',remember);row.addEventListener('change',remember);row.addEventListener('toggle',()=>{if(variableDrafts.has(draftKey))remember();});
-        if(!existing&&!saved)remember();
+        const rowActions=node('div','','variable-row-actions');rowActions.append(undo,removeButton);top.append(rowActions);
+        fields.append(field('Name',name),valueField,field('Service',service));row.append(top,fields);
+        setValue(saved?.value ?? (existing?baseline(variable).value:''));
+        if(!existing)type.addEventListener('change',()=>{setValue(item.value.value);remember();});
+        if(existing){rows.push(item);list.append(row);}else{rows.unshift(item);list.prepend(row);}
+        row.addEventListener('input',()=>remember(true,item));row.addEventListener('change',()=>remember(true,item));
+        if(!existing&&!saved){remember();content.scrollTop=0;name.focus();}
     };
     if(draft)for(const saved of draft.edits)addRow(vars.find(v=>v.name===saved.originalName&&(v.service||'')===saved.originalService),saved);
     else vars.forEach(variable=>addRow(variable));
-    if(!rows.length)editor.append(node('p','No variables yet. Use Add variable to create one.','muted variable-empty'));
+    const add=actionButton('Add variable',()=>addRow(null),'add');add.disabled=updating;
+    search.addEventListener('input',filterRows);serviceFilter.addEventListener('change',filterRows);
+    filters.append(field('Search',search),field('Service filter',serviceFilter),add);
     const actions=node('div','','actions variable-actions');
-    actions.append(actionButton('Add variable',()=>addRow(null),'add'));
     actions.append(actionButton('Save changes',async()=>{
         try{
             if(updating)throw new Error('Wait for the current variable update to complete before saving more changes.');
@@ -1137,11 +1156,12 @@ async function renderVariables(pid, signal, loadedVariables) {
             const removals=patch.filter(change=>change.value==='').map(describe);
             const target=environmentLabel(environments.find(env=>String(env.id)===String(selectedEnvironment))||{id:selectedEnvironment});
             const summary=removals.length?`\n\nVariables removed: ${[...new Set(removals)].join(', ')}`:'';
-            if(!confirmAction(`Apply ${patch.length} variable change${patch.length===1?'':'s'} to ${target}?\n\nAffected variables: ${changedNames.join(', ')}${summary}\n\nKeep the popup open until the save completes.`))return;
+            if(!confirmAction(`Apply ${patch.length} variable change${patch.length===1?'':'s'} to ${target}?\n\nAffected variables: ${changedNames.join(', ')}${summary}\n\nYou can close the popup; saving continues in the background.`))return;
             await run(async()=>{
                 const mutationSignal=historyController.signal;
                 try{
-                    const result=await request(ep,'PATCH',patch,{signal:mutationSignal,expectedConfig:connection});
+                    const result=await submitOperation('variables',{environmentId:selectedEnvironment,patch},connection);
+                    await saveVariableDraft(draftKey);
                     variableDrafts.delete(draftKey);
                     Object.assign(environment,{variableUpdateStatus:'updating',variableUpdateObserved:false,variableUpdateStartedAt:Date.now()});
                     const returned=Array.isArray(result)?result:embedded(result,'variables');
@@ -1160,24 +1180,51 @@ async function renderVariables(pid, signal, loadedVariables) {
             });
         }catch(error){error.message?setMessage(error.message,true):setMessage(String(error),true);}
     },'save','primary'));
-    actions.append(btn('Discard changes',async()=>{if(!variableDrafts.has(draftKey))return;if(!confirmAction('Discard unsaved changes for this environment?'))return;variableDrafts.delete(draftKey);await renderVariables(pid,historyController.signal,freshVariables);},'ghost variable-discard'));
-    const filters=node('div','','variable-filters');
-    const search=node('input');search.type='search';search.placeholder='Search variables';search.setAttribute('aria-label','Search variables');
-    const serviceFilter=makeSelect('Filter variables by service',[['*','All services'],['','Global'],['author','Author'],['publish','Publish'],['preview','Preview']],'*');
-    const filterRows=()=>{const term=search.value.trim().toLowerCase();for(const item of rows)item.row.hidden=!!item.originalName&&(!`${item.name.value} ${item.service.value}`.toLowerCase().includes(term)||(serviceFilter.value!=='*'&&item.service.value!==serviceFilter.value));};
-    search.addEventListener('input',filterRows);serviceFilter.addEventListener('change',filterRows);
-    filters.append(search,field('Service filter',serviceFilter));
-    editor.prepend(actions,draftStatus,filters);remember();
-    if(updating)for(const control of editor.querySelectorAll('button,input,select'))control.disabled=true;
-    content.append(editor);
+    actions.append(btn('Discard changes',async()=>{if(!variableDrafts.has(draftKey))return;if(!confirmAction('Discard unsaved changes for this environment?'))return;await saveVariableDraft(draftKey);variableDrafts.delete(draftKey);await renderVariables(pid,historyController.signal,freshVariables);},'ghost variable-discard'));
+    const exportButton=btn('Export JSON',()=>{
+        const url=URL.createObjectURL(new Blob([JSON.stringify(exportVariables(freshVariables),null,2)],{type:'application/json'}));
+        const link=node('a');link.href=url;link.download=`variables-${pid}-${selectedEnvironment}.json`;
+        document.body.append(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+        setMessage('Exported loaded saved variables. Secret values and unsaved edits are excluded.');
+    },'ghost');
+    const fileInput=node('input');fileInput.type='file';fileInput.accept='.json,application/json';fileInput.hidden=true;fileInput.setAttribute('aria-label','Import variable JSON file');
+    const importButton=btn('Import JSON',()=>fileInput.click(),'ghost');importButton.disabled=updating;
+    fileInput.addEventListener('change',async()=>{
+        const file=fileInput.files[0];fileInput.value='';if(!file)return;
+        importButton.disabled=true;
+        try{
+            const text=await file.text();
+            if(signal.aborted || !editor.isConnected || busy || switchingProfile || connectionChanged)return;
+            const edits=mergeVariableImport(text,vars,serialize());
+            list.replaceChildren();rows.length=0;
+            for(const saved of edits)addRow(vars.find(variable=>variable.name===saved.originalName&&(variable.service||'')===saved.originalService),saved);
+            remember();
+            setMessage('Imported into draft. Review changes and click Save to apply. New secrets without values must be filled in.');
+        }catch(error){if(editor.isConnected&&!signal.aborted)setMessage(error.message || String(error),true);}
+        finally{importButton.disabled=updating;}
+    });
+    importButton.title='Merge JSON into this draft by name and service. Save is always manual.';
+    exportButton.title='Export loaded saved variables without secret values or unsaved edits.';
+    actions.append(importButton,exportButton,draftStatus,fileInput);
+    editor.append(actions,filters,resultStatus,list,empty);
+    content.append(editor);remember(false);
     await persistSnapshot(signal);
     scheduleEnvironmentPoll();
 }
+
+function sizeVariablesView() {
+    const available=location.protocol==='chrome-extension:'?window.screen.availWidth:window.innerWidth;
+    document.body.style.setProperty('--variables-width',`${Math.min(780,Math.max(360,available-32))}px`);
+}
+window.addEventListener('resize',sizeVariablesView);
 
 for (const b of document.querySelectorAll('[data-tab]')) b.addEventListener('click', () => {
     if (busy && !activeRead) return;
     if(tab===b.dataset.tab)return;
     tab = b.dataset.tab;
+    document.body.classList.toggle('variables-view',tab==='variables');
+    sizeVariablesView();
     document.querySelectorAll('[data-tab]').forEach(t => {t.classList.toggle('active',t===b);if(t===b)t.setAttribute('aria-current','page');else t.removeAttribute('aria-current');});
     navigate();
 });
@@ -1188,15 +1235,78 @@ $('environment').addEventListener('change', () => {
 });
 $('refresh').addEventListener('click', () => navigate(true));
 $('settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
-navigate();
+function profileIdentity(state) {
+    const profile=state?.profiles.find(item=>item.id===state.activeProfileId);
+    return JSON.stringify([state?.activeProfileId,...['clientId','orgId','programId','oauthScopes'].map(key=>profile?.[key] || '')]);
+}
+$('programProfile').addEventListener('change',async()=>{
+    const id=$('programProfile').value;
+    if(switchingProfile || (busy && !activeRead)){$('programProfile').value=connection.profileId || '';return;}
+    switchingProfile=true;$('programProfile').disabled=true;
+    historyController.abort();environmentPollController?.abort();clearTimeout(environmentPollTimer);
+    try{
+        if(activeRead)await activeRead;
+        $('content').hidden=true;$('content').inert=true;
+        $('viewLoaderLabel').textContent='Switching program…';$('viewLoader').hidden=false;
+        await profileCommand('selectProfile',{profileId:id});
+        await navigate();
+    }catch(e){$('programProfile').value=connection.profileId || '';error(e);$('content').replaceChildren();}
+    finally{switchingProfile=false;$('programProfile').disabled=false;$('viewLoader').hidden=true;$('content').hidden=false;}
+});
+async function refreshBackgroundStatus() {
+    if(!usesBackground())return;
+    clearTimeout(backgroundStatusTimer);
+    try {
+        const response=await chrome.runtime.sendMessage({type:'operationStatus'});
+        if(!response?.ok)throw new Error(response?.error || 'Background status unavailable.');
+        const previous=backgroundPending;
+        backgroundPending=response.data.some(job=>job.status==='running');
+        $('programProfile').disabled=backgroundPending || busy || initializingProfiles || switchingProfile;
+        let panel=$('backgroundActions');
+        if(!panel){panel=node('div','','background-actions');panel.id='backgroundActions';panel.setAttribute('role','status');$('content').before(panel);}
+        panel.replaceChildren();panel.hidden=!response.data.length;
+        for(const job of response.data.slice(0,3)){
+            const labels={running:'In progress · you can close this popup',completed:'Completed',partial:'Completed with skipped or failed pipelines',failed:'Failed · refresh state before retrying',unknown:'Interrupted · result unknown; refresh state before retrying'};
+            panel.append(node('p',`${job.kind==='variables'?'Variable save':'Pipeline action'} · ${labels[job.status]} · ${new Date(job.startedAt).toLocaleTimeString()}`));
+            for(const outcome of job.outcomes || [])panel.append(node('p',`Pipeline ${outcome.id}: ${outcome.message}`,'muted'));
+        }
+        if(backgroundPending){
+            for(const control of $('content').querySelectorAll('.action-start,.action-stop,.action-approve,.action-reject,.action-save'))control.disabled=true;
+            backgroundStatusTimer=setTimeout(()=>void refreshBackgroundStatus(),2000);
+        }else if(previous){
+            backgroundRefreshNeeded=true;
+            if(!busy && !initializingProfiles){backgroundRefreshNeeded=false;await navigate(true);}
+        }
+        if(!busy)syncEnvironmentIndicators();
+    }catch(error){setMessage(`Cannot check background actions: ${error.message}`,true);}
+}
 
 chrome.storage.onChanged?.addListener((changes, area) => {
-    if (area !== 'local' || !['clientId','orgId','programId','oauthScopes'].some(key => key in changes)) return;
-    connectionChanged = true;
-    variableDrafts.clear();
-    clearTimeout(environmentPollTimer);
-    historyController.abort();
-    viewGeneration++;
-    setMessage('Connection settings changed. Click Refresh to load the new configuration.');
-    for (const control of $('content').querySelectorAll('button,input,select')) control.disabled = true;
+    if(area==='session' && Object.keys(changes).some(key=>key.startsWith('backgroundJob:'))){void refreshBackgroundStatus();return;}
+    if(area!=='local')return;
+    const profiles=changes[PROFILE_KEY];
+    if(profiles?.newValue){
+        fillProfileSelect($('programProfile'),{profiles:profiles.newValue.profiles,activeProfileId:profiles.newValue.activeProfileId});
+        if(profileIdentity(profiles.oldValue)===profileIdentity(profiles.newValue)){
+            const selected=profiles.newValue.profiles.find(item=>item.id===profiles.newValue.activeProfileId);
+            if(selected?.id===connection.profileId)$('programLabel').textContent=`${selected.name} · Program ${selected.programId || 'not configured'}`;
+            return;
+        }
+    }else if(!['clientId','orgId','programId','oauthScopes'].some(key=>key in changes))return;
+    connectionChanged=true;
+    clearTimeout(environmentPollTimer);environmentPollController?.abort();
+    historyController.abort();viewGeneration++;
+    setMessage('Program connection changed. Loading selected program…');
+    for(const control of $('content').querySelectorAll('button,input,textarea,select'))control.disabled=true;
+    if(!initializingProfiles && !switchingProfile && profiles){if(busy && !activeRead)pendingProfileNavigation=true;else void navigate();}
 });
+(async()=>{
+    try{
+        if(chrome.runtime.sendMessage){const state=await profileCommand('listProfiles');fillProfileSelect($('programProfile'),state);}
+        else $('programProfile').closest('.program-switcher').hidden=true;
+        initializingProfiles=false;
+        await refreshBackgroundStatus();
+        await navigate();
+        await refreshBackgroundStatus();
+    }catch(e){initializingProfiles=false;error(e);}
+})();

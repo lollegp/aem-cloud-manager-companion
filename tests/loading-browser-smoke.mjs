@@ -12,13 +12,15 @@ export default async function loadingBrowserSmoke(page, files) {
         // Exercise the production abort path without waiting 30 seconds.
         AbortSignal.timeout = ms => timeout(ms / 60);
         window.settingsOpened = 0;
+        const profile={id:'fixture',name:'Test program',clientId:'client',orgId:'org',programId:'1',oauthScopes:'scope'};
+        const registry={version:1,activeProfileId:profile.id,profiles:[profile]};
         window.chrome = {
             storage: {
-                local: {get: async () => ({clientId: 'client', orgId: 'org', programId: '1', oauthScopes: 'scope'})},
-                session: {get: async () => ({token: 'manual-token'})},
+                local: {get: async () => ({connectionProfiles:registry})},
+                session: {get: async () => ({'profileSession:fixture':{token:'manual-token'}})},
                 onChanged: {addListener() {}}
             },
-            runtime: {openOptionsPage() { window.settingsOpened++; }, sendMessage: async () => ({ok: true, data: {saved: true, clientId: 'client', orgId: 'org'}})}
+            runtime: {openOptionsPage() { window.settingsOpened++; }, sendMessage: async message => ({ok:true,data:message.action==='listProfiles' ? {activeProfileId:'fixture',profiles:[profile]} : {saved:true,clientId:'client',orgId:'org'}})}
         };
     });
     let stalled = true;

@@ -4,19 +4,23 @@
 <body class="settings"><main class="narrow">
 <header><div><p class="eyebrow">CLOUD MANAGER COMPANION</p><h1>Connection</h1></div><a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></header>
 <p>Connect your Adobe Developer Console OAuth Server-to-Server credential to a Cloud Manager program.</p>
-<section class="appearance-settings" aria-labelledby="appearanceTitle">
-    <h2 id="appearanceTitle">Appearance</h2>
-    <label for="themePreference">Theme</label>
-    <div class="select-control"><select id="themePreference" aria-describedby="themeHelp"><option value="system">System (default)</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
-    <p id="themeHelp" class="muted">System follows your computer’s light or dark theme. Your choice applies to all extension pages.</p>
-    <p id="themeFeedback" role="status" class="muted"></p>
+
+<section class="profile-settings" aria-labelledby="profilesTitle">
+    <h2 id="profilesTitle">Programs</h2>
+    <label for="programProfile">Connection profile</label>
+    <div class="select-control"><select id="programProfile" aria-describedby="profilesHelp"></select></div>
+    <p id="profilesHelp" class="muted">Each program has its own credentials and token. Selecting a program also changes the popup.</p>
+    <label for="profileName">Profile name</label><input id="profileName" maxlength="80" autocomplete="off" placeholder="For example, Commerce production">
+    <div class="actions"><button id="addProfile">Add program</button><button id="renameProfile">Rename</button><button id="deleteProfile" class="danger ghost">Delete program</button></div>
 </section>
 <section class="connection-fields" aria-label="Adobe connection">
+    <h2>Adobe connection</h2>
+    <p class="muted">Client ID, Organization ID, and Program ID are required.</p>
     <div class="grid">
-        <div><label for="clientId">Client ID</label><input id="clientId" autocomplete="off" spellcheck="false"></div>
-        <div><label for="orgId">Organization ID</label><input id="orgId" autocomplete="off" spellcheck="false"></div>
+        <div><label for="clientId">Client ID</label><input id="clientId" aria-required="true" autocomplete="off" spellcheck="false"></div>
+        <div><label for="orgId">Organization ID</label><input id="orgId" aria-required="true" autocomplete="off" spellcheck="false"></div>
     </div>
-    <label for="programId">Program ID</label><input id="programId" autocomplete="off" spellcheck="false" aria-describedby="programHelp">
+    <label for="programId">Program ID</label><input id="programId" aria-required="true" autocomplete="off" spellcheck="false" aria-describedby="programHelp">
     <small id="programHelp">Find this in your Cloud Manager program URL.</small>
     <label for="clientSecret">Client secret</label><input id="clientSecret" type="password" autocomplete="off" spellcheck="false" placeholder="Enter a secret, or leave blank to use the saved one">
     <label for="oauthScopes">OAuth scopes</label><input id="oauthScopes" autocomplete="off" spellcheck="false" placeholder="Copy scopes from Adobe Developer Console">
@@ -28,8 +32,8 @@
     <label class="remember-secret"><input id="rememberSecret" type="checkbox"> Save this credential on this device for automatic renewal.</label>
     <p class="storage-disclosure"><strong>Storage limitation:</strong> the secret is encrypted with a fixed key bundled with this extension. Anyone with the extension code and your saved data can decrypt it. This is obfuscation, not a secure password vault. Only save on a trusted, private Chrome profile. Selecting the checkbox confirms you accept this limitation.</p>
 </fieldset>
-<div class="connect-bar"><button id="connect" class="primary">Connect</button><p id="tokenStatus" class="muted"></p></div>
-<p id="feedback" role="status" aria-live="polite"></p>
+<div class="connection-status"><div class="connect-bar"><button id="connect" class="primary">Connect</button><p id="tokenStatus" class="muted"></p></div>
+<p id="feedback" role="status" aria-live="polite"></p></div>
 <p class="muted">Credentials go only to Adobe over HTTPS. Access tokens last for this browser session. Without saving, an entered secret is used once.</p>
 <details class="advanced-settings">
     <summary>Advanced connection controls</summary>
@@ -47,4 +51,11 @@
     <p>Access depends on your integration's Cloud Manager product profiles.</p>
     <a href="https://developer.adobe.com/developer-console/docs/guides/authentication/ServerToServerAuthentication/ims" target="_blank" rel="noopener noreferrer">Adobe authentication documentation</a>
 </details>
+<section class="appearance-settings" aria-labelledby="appearanceTitle">
+    <h2 id="appearanceTitle">Appearance</h2>
+    <label for="themePreference">Theme</label>
+    <div class="select-control"><select id="themePreference" aria-describedby="themeHelp"><option value="system">System (default)</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+    <p id="themeHelp" class="muted">System follows your computer’s light or dark theme. Your choice applies to all extension pages.</p>
+    <p id="themeFeedback" role="status" class="muted"></p>
+</section>
 </main><script type="module" src="options.js"></script></body></html>

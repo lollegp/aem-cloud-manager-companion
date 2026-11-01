@@ -1,6 +1,6 @@
 # Reviewer instructions
 
-> Historical preparation notes for version 0.6.1. The [Store listing](https://chromewebstore.google.com/detail/aem-cloud-manager-compani/algghcdmdihlkbkaeeeplmhallhainna) is now available. Pending review items below record preparation findings; their resolution has not been independently verified.
+> Release preparation notes for version 0.7.0. The [Store listing](https://chromewebstore.google.com/detail/aem-cloud-manager-compani/algghcdmdihlkbkaeeeplmhallhainna) is now available. Pending review items below record preparation findings; their resolution has not been independently verified.
 
 ## Purpose and access requirements
 
@@ -20,7 +20,7 @@ The submitted extension starts empty. No credential or token is included in the 
 
 - Open Pipelines, expand a sample environment and inspect pipeline type, current status and last execution outcome. Open history and scroll for additional runs.
 - Open Environments to view fresh status. Change an alias or display order; these preferences are local.
-- Open Variables, select an environment, search and filter by service, and expand a plain-value row. Secret variables are write-only.
+- Open Variables, select an environment, search and filter by service, and edit a plain-value row inline. Secret variables are write-only.
 - In Settings → Appearance, select Light, Dark and System. System follows the computer theme; the selection persists locally.
 
 ## Changes — dedicated nonproduction targets only
@@ -36,3 +36,7 @@ In Settings, use Forget saved secret to remove optional saved credentials and cl
 ## Known pre-submission review item
 
 The publisher chose to retain fixed-key local Client Secret storage and token generation inside the extension. See `store/READINESS.md`. The source documents the limitation; it does not claim that disclosure establishes compliance or that security review has passed.
+
+## Version 0.7.0 checks
+
+Create two program profiles and verify isolation while switching. Edit a variable, close and reopen the popup, then use Discard changes. Import JSON must only stage edits; Export JSON must omit secrets and unsaved changes. On an authorized nonproduction target, confirm a save and close the popup: the accepted operation should complete without replay.

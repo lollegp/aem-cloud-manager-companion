@@ -10,6 +10,9 @@ Manage Adobe Cloud Manager pipelines, environment variables, and environment sta
 
 Manage Adobe AEM Cloud Manager pipelines, environments and runtime variables from Chrome.
 
+MULTIPLE PROGRAMS
+Switch between isolated program profiles, each with its own credentials, session tokens, drafts and environment preferences. Accepted actions continue in the background after the popup closes.
+
 PIPELINES BY ENVIRONMENT
 View Full-Stack, WebTier, Front End and CDN Config pipelines grouped by environment. Start or stop eligible pipelines individually or as an environment group. Approve or reject recognized waiting production deployments. Confirmations show all affected targets, including shared pipelines.
 
@@ -17,7 +20,7 @@ CLEAR EXECUTION STATUS
 See current pipeline availability and the last execution outcome separately. Expand an environment to refresh status. Open execution history on demand and load older runs as you scroll.
 
 BATCH VARIABLE EDITING
-Search variables, filter by service and stage multiple additions, edits or removals before saving together. Plain values are prefilled; secret values remain write-only. Unsaved drafts stay in memory while the popup is open. Environment updates show progress and block pipeline starts and approvals until ready.
+Search variables, filter by service and stage multiple additions, edits or removals before saving together. Plain values are prefilled; secret values remain write-only. Drafts, including replacement secrets, survive popup closure in memory-backed Chrome session storage until Save or Discard. Chrome restart or extension reload also clears drafts. Drafts are not written to local or sync storage. Export saved variables to JSON without secret values, or merge JSON into an editable draft. Import does not save automatically. Environment updates show progress and block pipeline starts and approvals until ready.
 
 PERSONALIZE YOUR VIEW
 Set local environment aliases, reorder environments or hide them from Pipelines. Choose Light, Dark or System appearance. System follows your computer theme by default.
@@ -27,7 +30,7 @@ Requires Chrome 120 or newer and an authorized Adobe Cloud Manager integration. 
 
 Optional credential saving enables automatic token renewal after restart. Saved Client Secrets use a bundled fixed encryption key. Anyone with the code and saved data can decrypt them; this is obfuscation, not a secure vault. Saving is off by default and requires explicit consent.
 
-Requests go directly to Adobe over HTTPS. No credentials are bundled. There is no developer-operated backend, advertising or analytics. Runtime variable values and drafts are not persisted. Read the privacy policy for data handling, retention and deletion controls.
+Requests go directly to Adobe over HTTPS. No credentials are bundled. There is no developer-operated backend, advertising or analytics. Drafts, including replacement secrets, survive popup closure in memory-backed Chrome session storage until Save or Discard. Chrome restart or extension reload also clears drafts. Drafts are not written to local or sync storage. Read the privacy policy for data handling, retention and deletion controls.
 
 Independent tool. Not affiliated with or endorsed by Adobe.
 
@@ -37,7 +40,7 @@ Manage Adobe Cloud Manager environments, deployment pipelines and runtime variab
 
 ## Motivazione Storage
 
-The storage permission saves connection identifiers and scopes, local environment aliases, order and visibility, and appearance preferences. Chrome session storage holds access tokens, expiry information and display metadata to avoid repeated API calls. With explicit consent, local storage also holds an optional Client Secret record for automatic token renewal. This record uses a bundled fixed encryption key and is not a secure vault. Runtime variable values and unsaved drafts are not persisted. Storage is not used for advertising, analytics or Chrome Sync.
+The storage permission saves connection identifiers and scopes, local environment aliases, order and visibility, and appearance preferences. Chrome session storage holds access tokens, expiry information and display metadata to avoid repeated API calls. With explicit consent, local storage also holds an optional Client Secret record for automatic token renewal. This record uses a bundled fixed encryption key and is not a secure vault. Drafts, including replacement secrets, survive popup closure in memory-backed Chrome session storage until Save or Discard. Chrome restart or extension reload also clears drafts. Drafts are not written to local or sync storage. Storage is not used for advertising, analytics or Chrome Sync.
 
 ## Motivazione autorizzazione host — campo unico
 
@@ -59,7 +62,7 @@ Upload these separate image files, in this order:
 
 1. `store/screenshots/01-pipelines-dark.png` — environment groups, current/last execution ribbons and production approval controls.
 2. `store/screenshots/02-variables-light.png` — service-scoped variables, search, filters and batch editing controls.
-3. `store/screenshots/03-settings-light.png` — appearance selection and connection configuration.
+3. `store/screenshots/03-settings-light.png` — program profiles and connection configuration.
 
 All three are exactly 1280 × 800 pixels. They render the actual extension with synthetic sample data and contain no real credentials. They do not demonstrate live Adobe access. The Store icon is `icons/icon-128.png`.
 
