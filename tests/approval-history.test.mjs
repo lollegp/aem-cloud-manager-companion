@@ -36,7 +36,7 @@ test('history pager blocks concurrent loads and retries a failed page', async ()
     let calls = 0, finish;
     const pager = createHistoryPager('/api/program/1/pipeline/2/executions', async () => {
         calls++;
-        if (calls === 1) return new Promise((resolve, reject) => { finish = () => reject(new Error('offline')); });
+        if (calls === 1) {return new Promise((resolve, reject) => { finish = () => reject(new Error('offline')); });}
         return {_embedded: {executions: []}, _links: {next: {href: '/api/program/1/pipeline/2/executions?start=20'}}};
     });
     const first = pager.load();

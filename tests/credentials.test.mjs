@@ -8,11 +8,11 @@ function fixture(initial = {}) {
     const area = (data, name) => ({
         get: async keys => structuredClone(Object.fromEntries(keys.filter(k => k in data).map(k => [k, data[k]]))),
         set: async values => {
-            if (name === 'local' && failLocal) throw Error('storage unavailable');
+            if (name === 'local' && failLocal) {throw Error('storage unavailable');}
             writes.push({name, values: structuredClone(values)});
             Object.assign(data, structuredClone(values));
         },
-        remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key]; },
+        remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) {delete data[key];} },
         setAccessLevel: async value => access.push({name, ...value})
     });
     const storage = {local: area(local, 'local'), session: area(session, 'session')};

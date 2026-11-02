@@ -1,11 +1,14 @@
 // All traffic is mocked. Exercise async variable updates and the execution guard.
 export default async function environmentUpdateSmoke(page,files) {
     const checks=[],errors=[],calls=[];
-    const check=(ok,message)=>{if(!ok)throw new Error(message);checks.push(message);};
+    const check=(ok,message)=>{if(!ok){throw new Error(message);}checks.push(message);};
     page.on('pageerror',error=>errors.push(error.message));
     await page.route('https://environment-update.test/**',route=>{
         const name=new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:files[name]||''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({contentType,body:files[name]||''});
     });
     await page.goto('https://environment-update.test/reset');
     await page.evaluate(()=>{localStorage.clear();sessionStorage.clear();});
@@ -21,22 +24,22 @@ export default async function environmentUpdateSmoke(page,files) {
     await page.route('https://cloudmanager.adobe.io/**',async route=>{
         const request=route.request(),url=new URL(request.url()),path=url.pathname;calls.push(path);
         const send=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
-        if(path.endsWith('/environments'))return send({_embedded:{environments}});
-        if(path.endsWith('/pipelines'))return send({_embedded:{pipelines:[pipeline]}});
+        if(path.endsWith('/environments')){return send({_embedded:{environments}});}
+        if(path.endsWith('/pipelines')){return send({_embedded:{pipelines:[pipeline]}});}
         if(path.endsWith('/variables')){
-            const id=path.match(/environment\/(\d+)/)[1];
+            const id=/environment\/(\d+)/.exec(path)[1];
             if(request.method()==='PATCH'){
                 patches++;variables[id]=request.postDataJSON().map(item=>({...item,status:'updating'}));
                 return send({_embedded:{variables:variables[id]}});
             }
             return failStatus?send({message:'Status unavailable'},503):send({_embedded:{variables:variables[id]}});
         }
-        if(path.endsWith('/pipeline/10'))return send(pipeline);
+        if(path.endsWith('/pipeline/10')){return send(pipeline);}
         if(path.endsWith('/execution')){
             if(request.method()==='PUT'){starts++;return send({});}
             return send({message:'No execution'},404);
         }
-        if(path.endsWith('/executions'))return send({_embedded:{executions:[]}});
+        if(path.endsWith('/executions')){return send({_embedded:{executions:[]}});}
         return send({message:`Unexpected request ${path}`},404);
     });
     const ready=()=>page.waitForFunction(()=>!document.querySelector('#refresh').disabled&&!document.querySelector('[data-loading="true"]'));
@@ -44,14 +47,14 @@ export default async function environmentUpdateSmoke(page,files) {
     const group=name=>page.locator('.environment-group').filter({has:page.locator('.environment-summary').filter({hasText:name})});
     await page.goto('https://environment-update.test/popup.html');await ready();
     await tab('Variables');
-    check(await page.locator('.select-control > select').evaluateAll(selects=>selects.every(select=>getComputedStyle(select).appearance==='none'&&parseFloat(getComputedStyle(select).paddingRight)>=34)),'all dropdowns reserve padding for their chevrons');
+    check(await page.locator('.select-control > select').evaluateAll(selects=>selects.every(select=>getComputedStyle(select).appearance==='none'&&Number.parseFloat(getComputedStyle(select).paddingRight)>=34)),'all dropdowns reserve padding for their chevrons');
     await page.getByLabel('Import variable JSON file').setInputFiles({name:'variables.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,variables:[{name:'RUNMODES',type:'string',service:'author',value:'new-value'}]}))});
     await page.waitForFunction(()=>document.querySelector('#message').textContent.startsWith('Imported into draft'));
     check(await page.getByLabel('Value for RUNMODES').inputValue()==='new-value'&&patches===0,'imported value is editable without sending a PATCH before explicit Save');
     await page.getByRole('button',{name:/^Save \d+ changes?$/}).click();await ready();
     check(patches===1&&(await page.locator('.variable-update-notice').innerText()).includes('update in progress'),'accepted save shows variable update progress');
     check(await page.locator('.variable-update-notice > .pill').innerText()==='Updating','Variables update ribbon is capitalized');
-    check(await page.locator('.variable-update-notice').evaluate(element=>parseFloat(getComputedStyle(element).marginTop)>=12),'Variables status ribbon has top spacing');
+    check(await page.locator('.variable-update-notice').evaluate(element=>Number.parseFloat(getComputedStyle(element).marginTop)>=12),'Variables status ribbon has top spacing');
     check(await page.locator('.action-save').isDisabled(),'another save is blocked during environment update');
     check(await page.getByRole('searchbox',{name:'Search variables'}).isEnabled()&&await page.getByLabel('Filter variables by service').isEnabled(),'search and service filter remain available during updates');
     check(await page.getByLabel('Value for RUNMODES').isDisabled()&&await page.getByRole('button',{name:'Add variable'}).isDisabled(),'variable mutation fields remain disabled during updates');

@@ -15,7 +15,7 @@ export function projectPipeline(pipeline) {
         }))} : {})};
 }
 export function projectExecution(execution) {
-    if (!execution) return null;
+    if (!execution) {return null;}
     return {...pick(execution, ['id','status','pipelineId','createdAt','startedAt','finishedAt']),
         _embedded: {stepStates: (execution._embedded?.stepStates || []).map(step => ({
             ...pick(step, ['id','phaseId','stepId','name','action','status','environmentId','environmentType']),
@@ -43,18 +43,19 @@ export async function loadSnapshot(config, signal, storage = chrome.storage.sess
         const key = snapshotKey(config);
         const invalidationKey=snapshotInvalidationKey(config);
         const values=await abortable(storage.get([key,invalidationKey]),deadline),value=values[key];
-        if(values[invalidationKey] && (!value?.updatedAt || value.updatedAt<=values[invalidationKey]))return null;
-        if (value?.version !== 1 || !Array.isArray(value.environments) || !Array.isArray(value.pipelines)) return null;
+        if(values[invalidationKey] && (!value?.updatedAt || value.updatedAt<=values[invalidationKey])){return null;}
+        if (value?.version !== 1 || !Array.isArray(value.environments) || !Array.isArray(value.pipelines)) {return null;}
         return projectSnapshot(value);
-    } catch (error) {
-        if (signal?.aborted) throw signal.reason;
+    } catch {
+        if (signal?.aborted) {throw signal.reason;}
+        // An unavailable session cache falls back to fresh API data.
         return null;
     }
 }
 export async function saveSnapshot(config, snapshot, signal, storage = chrome.storage.session) {
     signal?.throwIfAborted();
     const value = projectSnapshot(snapshot);
-    if (JSON.stringify(value).length > 2000000) throw new Error('Pipeline cache exceeds its size limit.');
+    if (JSON.stringify(value).length > 2000000) {throw new Error('Pipeline cache exceeds its size limit.');}
     const deadline = signal ? AbortSignal.any([signal,AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000);
     const key=snapshotKey(config);
     const write=storage.set({[key]:value}).then(async()=>{
@@ -65,7 +66,7 @@ export async function saveSnapshot(config, snapshot, signal, storage = chrome.st
         // profile deletion finished while that write was in flight.
         if(config.profileId){
             const state=(await chrome.storage.local.get([PROFILE_KEY]))[PROFILE_KEY];
-            if(!state?.profiles.some(profile=>profile.id===config.profileId))await storage.remove(key);
+            if(!state?.profiles.some(profile=>profile.id===config.profileId)){await storage.remove(key);}
         }
     });
     await abortable(write,deadline);

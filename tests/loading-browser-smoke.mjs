@@ -1,11 +1,14 @@
 // Reproduce a Cloud Manager request that never responds; no real API calls.
 export default async function loadingBrowserSmoke(page, files) {
     const checks = [], errors = [];
-    const check = (value, name) => { if (!value) throw new Error(name); checks.push(name); };
+    const check = (value, name) => { if (!value) {throw new Error(name);} checks.push(name); };
     page.on('pageerror', error => errors.push(error.message));
     await page.route('https://loading-companion.test/**', route => {
         const name = new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({contentType: name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html', body: files[name] || ''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({contentType, body: files[name] || ''});
     });
     await page.addInitScript(() => {
         const timeout = AbortSignal.timeout.bind(AbortSignal);
@@ -25,7 +28,7 @@ export default async function loadingBrowserSmoke(page, files) {
     });
     let stalled = true;
     await page.route('https://cloudmanager.adobe.io/**', route => {
-        if (stalled) return; // Deliberately leave the network request pending.
+        if (stalled) {return;} // Deliberately leave the network request pending.
         return route.fulfill({contentType: 'application/json', body: '{"_embedded":{"environments":[],"pipelines":[]}}'});
     });
     await page.goto('https://loading-companion.test/popup.html');
@@ -53,9 +56,9 @@ export default async function loadingBrowserSmoke(page, files) {
     let executionRequests = 0;
     await page.route('https://cloudmanager.adobe.io/**', async route => {
         const path = new URL(route.request().url()).pathname;
-        if (path.endsWith('/environments')) return route.fulfill({contentType: 'application/json', body: '{"_embedded":{"environments":[]}}'});
-        if (path.endsWith('/pipelines')) return route.fulfill({contentType: 'application/json', body: JSON.stringify({_embedded: {pipelines: Array.from({length: 10}, (_, i) => ({id: String(i), name: `Pipeline ${i}`, status: 'IDLE', buildType: 'fullstack', phases: []}))}})});
-        if (/\/pipeline\/[^/]+$/.test(path)) return route.fulfill({contentType:'application/json',body:JSON.stringify({id:path.split('/').at(-1),name:'Pipeline',status:'IDLE',buildType:'fullstack',phases:[]})});
+        if (path.endsWith('/environments')) {return route.fulfill({contentType: 'application/json', body: '{"_embedded":{"environments":[]}}'});}
+        if (path.endsWith('/pipelines')) {return route.fulfill({contentType: 'application/json', body: JSON.stringify({_embedded: {pipelines: Array.from({length: 10}, (_, i) => ({id: String(i), name: `Pipeline ${i}`, status: 'IDLE', buildType: 'fullstack', phases: []}))}})});}
+        if (/\/pipeline\/[^/]+$/.test(path)) {return route.fulfill({contentType:'application/json',body:JSON.stringify({id:path.split('/').at(-1),name:'Pipeline',status:'IDLE',buildType:'fullstack',phases:[]})});}
         executionRequests++;
         await new Promise(resolve => setTimeout(resolve, 300));
         await route.fulfill({contentType: 'application/json', body: '{}'}).catch(() => {});

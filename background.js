@@ -10,7 +10,7 @@ configureWorkerAPI(run);
 const jobs=createJobManager(chrome.storage.session,async job=>{
     invalidateWorkerReads();
     const current=await settings();
-    if(['profileId','clientId','orgId','programId','oauthScopes'].some(key=>String(current[key] || '')!==String(job.config?.[key] || '')))throw new Error('Connection settings changed. Refresh before running an action.');
+    if(['profileId','clientId','orgId','programId','oauthScopes'].some(key=>String(current[key] || '')!==String(job.config?.[key] || ''))){throw new Error('Connection settings changed. Refresh before running an action.');}
     await chrome.storage.session.set({[snapshotInvalidationKey(job.config)]:Date.now()});
     await chrome.storage.session.remove(snapshotKey(job.config));
     try {
@@ -30,17 +30,17 @@ const jobs=createJobManager(chrome.storage.session,async job=>{
 let workCount=0,heartbeat,credentialChanges=0;
 function keepWorking() {
     workCount++;
-    if(workCount!==1)return;
-    const pulse=()=>{if(!workCount)return;void chrome.runtime.getPlatformInfo().catch(()=>{});heartbeat=setTimeout(pulse,20000);};
+    if(workCount!==1){return;}
+    const pulse=()=>{if(!workCount){return;}void chrome.runtime.getPlatformInfo().catch(()=>{});heartbeat=setTimeout(pulse,20000);};
     heartbeat=setTimeout(pulse,20000);
 }
-function finishedWorking(){if(--workCount===0)clearTimeout(heartbeat);}
+function finishedWorking(){if(--workCount===0){clearTimeout(heartbeat);}}
 const initialize = () => { void run({action:'status'}).catch(()=>{});void jobs.list('').catch(()=>{}); };
 chrome.runtime.onInstalled.addListener(initialize);
 chrome.runtime.onStartup.addListener(initialize);
 
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
-    if(!['credentials','api','operation','operationStatus'].includes(message?.type))return false;
+    if(!['credentials','api','operation','operationStatus'].includes(message?.type)){return false;}
     const settingsPage=sender.url===chrome.runtime.getURL('options.html');
     const popup=sender.url===chrome.runtime.getURL('popup.html');
     const respond=result=>{try{sendResponse(result);}catch{/* The sender may have closed; worker-owned work is already complete. */}};
@@ -49,22 +49,22 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     }
     keepWorking();
     (async()=>{
-        if(message.type==='operationStatus')return jobs.list((await settings()).profileId || '');
+        if(message.type==='operationStatus'){return jobs.list((await settings()).profileId || '');}
         if(message.type==='operation'){
-            if(!popup)throw new Error('Only the popup can submit pipeline or variable actions.');
-            if(credentialChanges)throw new Error('Credentials are being updated. Wait before submitting an action.');
+            if(!popup){throw new Error('Only the popup can submit pipeline or variable actions.');}
+            if(credentialChanges){throw new Error('Credentials are being updated. Wait before submitting an action.');}
             return jobs.start(message.job);
         }
         if(message.type==='api'){
-            if(!['GET','HEAD'].includes(message.method))throw new Error('Use a confirmed background action for changes.');
+            if(!['GET','HEAD'].includes(message.method)){throw new Error('Use a confirmed background action for changes.');}
             return request(message.path,message.method,undefined,{expectedConfig:message.config});
         }
         const allowedPopup=['ensureToken','listProfiles','selectProfile'];
-        if(!settingsPage&&!allowedPopup.includes(message.action))throw new Error('This page cannot perform the requested credential operation.');
-        if(jobs.busy()&&!['ensureToken','listProfiles','status'].includes(message.action))throw new Error('An action is in progress. Wait before changing program or credentials.');
+        if(!settingsPage&&!allowedPopup.includes(message.action)){throw new Error('This page cannot perform the requested credential operation.');}
+        if(jobs.busy()&&!['ensureToken','listProfiles','status'].includes(message.action)){throw new Error('An action is in progress. Wait before changing program or credentials.');}
         const changesCredentials=!['ensureToken','listProfiles','status'].includes(message.action);
-        if(changesCredentials)credentialChanges++;
-        try{return await run(message);}finally{if(changesCredentials)credentialChanges--;}
+        if(changesCredentials){credentialChanges++;}
+        try{return await run(message);}finally{if(changesCredentials){credentialChanges--;}}
     })().then(data=>respond({ok:true,data}),error=>respond({ok:false,error:error.message || 'Background operation failed.'})).finally(finishedWorking);
     return true;
 });

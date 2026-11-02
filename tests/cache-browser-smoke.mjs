@@ -1,11 +1,14 @@
 // Mocked Chrome/Adobe traffic: verify the cache by counting actual UI requests.
 export default async function cacheBrowserSmoke(page, files) {
     const checks = [], errors = [], calls = [];
-    const check = (ok, name) => { if (!ok) throw new Error(name); checks.push(name); };
+    const check = (ok, name) => { if (!ok) {throw new Error(name);} checks.push(name); };
     page.on('pageerror', error => errors.push(error.message));
     await page.route('https://cache-companion.test/**', route => {
         const name = new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:files[name]||''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({contentType,body:files[name]||''});
     });
     await page.goto('https://cache-companion.test/reset');
     await page.evaluate(()=>{localStorage.clear();sessionStorage.clear();});
@@ -15,9 +18,10 @@ export default async function cacheBrowserSmoke(page, files) {
         const session = JSON.parse(sessionStorage.getItem('sessionFixture') || '{"token":"token"}');
         window.fixtureLocal = local;
         window.fixtureSession = session;
+        const changes = values => Object.fromEntries(Object.entries(values).map(([key,value]) => [key,{newValue:value}]));
         const area = (data, key) => ({
             get: async keys => structuredClone(Object.fromEntries(keys.filter(k=>k in data).map(k=>[k,data[k]]))),
-            set: async values => { Object.assign(data,structuredClone(values)); sessionStorage.setItem(key,JSON.stringify(data)); if(key === 'localFixture') listeners.forEach(fn=>fn(Object.fromEntries(Object.keys(values).map(k=>[k,{newValue:values[k]}])),'local')); },
+            set: async values => { Object.assign(data,structuredClone(values)); sessionStorage.setItem(key,JSON.stringify(data)); if(key === 'localFixture') {listeners.forEach(fn=>fn(changes(values),'local'));} },
             remove: async keyToRemove => { delete data[keyToRemove]; sessionStorage.setItem(key,JSON.stringify(data)); }
         });
         window.chrome = {storage:{local:area(local,'localFixture'),session:area(session,'sessionFixture'),onChanged:{addListener:fn=>listeners.push(fn)}},runtime:{openOptionsPage(){}}};
@@ -25,21 +29,24 @@ export default async function cacheBrowserSmoke(page, files) {
     });
     let missingCurrent = false, shared = false, failExecution = false, delayExecution = false, pipelineStatus = 'BUSY', currentStatus = 'RUNNING', holdCatalog = false, holdAction = false, mutations = 0;
     const pipeline = id => ({id,name:`Pipeline ${id}`,type:'CI_CD',status:pipelineStatus,phases:id === 'shared' ? [{type:'DEPLOY',environmentId:'1'},{type:'DEPLOY',environmentId:'2'}] : [{type:'DEPLOY',environmentId:id}]});
+    const delayResponse = async path => {
+        if(holdCatalog && path.endsWith('/environments')) {await new Promise(resolve=>setTimeout(resolve,200));}
+        if(holdAction && path.endsWith('/pipeline/1')) {await new Promise(resolve=>setTimeout(resolve,200));}
+        if (path.includes('/pipeline/shared')) {await new Promise(resolve => setTimeout(resolve,50));}
+        if (delayExecution && path.endsWith('/execution')) {await new Promise(resolve => setTimeout(resolve,200));}
+    };
     await page.route('https://cloudmanager.adobe.io/**', async route => {
         const path = new URL(route.request().url()).pathname;
         calls.push(path);
         const send = (data,status=200) => route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)}).catch(()=>{});
         if(route.request().method() !== 'GET') { mutations++; return send({}); }
-        if(holdCatalog && path.endsWith('/environments')) await new Promise(resolve=>setTimeout(resolve,200));
-        if(holdAction && path.endsWith('/pipeline/1')) await new Promise(resolve=>setTimeout(resolve,200));
-        if (path.endsWith('/environments')) return send({_embedded:{environments:[{id:'1',name:'Alpha',type:'dev'},{id:'2',name:'Beta',type:'prod'}]}});
-        if (path.endsWith('/pipelines')) return send({_embedded:{pipelines:[pipeline('1'),pipeline('2'),...(shared ? [pipeline('shared')] : [])]}});
-        if (path.includes('/pipeline/shared')) await new Promise(resolve => setTimeout(resolve,50));
-        if (delayExecution && path.endsWith('/execution')) await new Promise(resolve => setTimeout(resolve,200));
-        if (failExecution && path.endsWith('/pipeline/1/execution')) return send({message:'Forbidden'},403);
-        if (path.endsWith('/execution')) return missingCurrent ? send({message:'Pipeline Execution not found'},404) : send({id:'run-1',status:currentStatus,createdAt:'2026-10-22T10:00:00Z',_embedded:{stepStates:[]}});
-        if (path.endsWith('/execution/run-1')) return send({id:'run-1',status:'FINISHED',createdAt:'2026-10-22T10:00:00Z',finishedAt:'2026-10-22T11:00:00Z',_embedded:{stepStates:[]}});
-        if (path.endsWith('/executions')) return send({_embedded:{executions:[{id:'history-1',status:'FINISHED',createdAt:'2026-10-21T10:00:00Z'}]}});
+        await delayResponse(path);
+        if (path.endsWith('/environments')) {return send({_embedded:{environments:[{id:'1',name:'Alpha',type:'dev'},{id:'2',name:'Beta',type:'prod'}]}});}
+        if (path.endsWith('/pipelines')) {return send({_embedded:{pipelines:[pipeline('1'),pipeline('2'),...(shared ? [pipeline('shared')] : [])]}});}
+        if (failExecution && path.endsWith('/pipeline/1/execution')) {return send({message:'Forbidden'},403);}
+        if (path.endsWith('/execution')) {return missingCurrent ? send({message:'Pipeline Execution not found'},404) : send({id:'run-1',status:currentStatus,createdAt:'2026-10-22T10:00:00Z',_embedded:{stepStates:[]}});}
+        if (path.endsWith('/execution/run-1')) {return send({id:'run-1',status:'FINISHED',createdAt:'2026-10-22T10:00:00Z',finishedAt:'2026-10-22T11:00:00Z',_embedded:{stepStates:[]}});}
+        if (path.endsWith('/executions')) {return send({_embedded:{executions:[{id:'history-1',status:'FINISHED',createdAt:'2026-10-21T10:00:00Z'}]}});}
         return send(pipeline(path.split('/').at(-1)));
     });
     const ready = () => page.waitForFunction(() => !document.getElementById('refresh').disabled && !document.querySelector('[data-loading="true"]'));

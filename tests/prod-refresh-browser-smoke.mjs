@@ -2,11 +2,14 @@
 export default async function prodRefreshBrowserSmoke(page,files) {
     const checks=[],errors=[],calls=[];
     await page.setViewportSize({width:410,height:600});
-    const check=(ok,name)=>{if(!ok)throw new Error(name);checks.push(name);};
+    const check=(ok,name)=>{if(!ok){throw new Error(name);}checks.push(name);};
     page.on('pageerror',error=>errors.push(error.message));
     await page.route('https://prod-refresh.test/**',route=>{
         const name=new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:files[name]||''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({contentType,body:files[name]||''});
     });
     await page.addInitScript(()=>{
         const session={token:'token'};
@@ -17,13 +20,13 @@ export default async function prodRefreshBrowserSmoke(page,files) {
     await page.route('https://cloudmanager.adobe.io/**',route=>{
         const path=new URL(route.request().url()).pathname;calls.push(path);
         const send=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
-        if(path.endsWith('/environments'))return send({_embedded:{environments:[{id:'dev',name:'Development',type:'dev'},{id:'prod',name:'Production',type:'prod'}]}});
-        if(path.endsWith('/pipelines'))return send({_embedded:{pipelines:[pipeline('dev'),pipeline('prod')]}});
-        if(path.endsWith('/pipeline/prod/execution')&&stage>=3)return send({message:'Pipeline Execution not found'},404);
-        if(path.endsWith('/pipeline/prod/executions'))return send({_embedded:{executions:[{id:'new-run',status:'FAILED',finishedAt:'2026-10-22T12:00:00Z'}]},_links:{next:{href:'/api/never-follow'}}});
-        if(path.endsWith('/pipeline/prod/execution'))return send({id:'run-prod',status:stage===2?'FINISHED':'RUNNING',_embedded:{stepStates:[]}});
-        if(path.endsWith('/pipeline/dev/execution'))return send({id:'run-dev',status:'RUNNING',_embedded:{stepStates:[]}});
-        if(path.endsWith('/execution/run-prod'))return send({id:'run-prod',status:stage===2?'FINISHED':'RUNNING',_embedded:{stepStates:stage===1?[{action:'approval',status:'WAITING',_links:{'http://ns.adobe.com/adobecloud/rel/pipeline/advance':{href:path+'/phase/1/step/1/advance'},'http://ns.adobe.com/adobecloud/rel/pipeline/cancel':{href:path+'/phase/1/step/1/cancel'}}}]:[]}});
+        if(path.endsWith('/environments')){return send({_embedded:{environments:[{id:'dev',name:'Development',type:'dev'},{id:'prod',name:'Production',type:'prod'}]}});}
+        if(path.endsWith('/pipelines')){return send({_embedded:{pipelines:[pipeline('dev'),pipeline('prod')]}});}
+        if(path.endsWith('/pipeline/prod/execution')&&stage>=3){return send({message:'Pipeline Execution not found'},404);}
+        if(path.endsWith('/pipeline/prod/executions')){return send({_embedded:{executions:[{id:'new-run',status:'FAILED',finishedAt:'2026-10-22T12:00:00Z'}]},_links:{next:{href:'/api/never-follow'}}});}
+        if(path.endsWith('/pipeline/prod/execution')){return send({id:'run-prod',status:stage===2?'FINISHED':'RUNNING',_embedded:{stepStates:[]}});}
+        if(path.endsWith('/pipeline/dev/execution')){return send({id:'run-dev',status:'RUNNING',_embedded:{stepStates:[]}});}
+        if(path.endsWith('/execution/run-prod')){return send({id:'run-prod',status:stage===2?'FINISHED':'RUNNING',_embedded:{stepStates:stage===1?[{action:'approval',status:'WAITING',_links:{'http://ns.adobe.com/adobecloud/rel/pipeline/advance':{href:path+'/phase/1/step/1/advance'},'http://ns.adobe.com/adobecloud/rel/pipeline/cancel':{href:path+'/phase/1/step/1/cancel'}}}]:[]}});}
         return send(pipeline(path.split('/').at(-1)));
     });
     const ready=()=>page.waitForFunction(()=>!document.getElementById('refresh').disabled&&!document.querySelector('[data-loading="true"]'));

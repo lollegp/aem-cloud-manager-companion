@@ -8,15 +8,45 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parent.parent
+MANIFEST = 'manifest.json'
 RUNTIME = {
-    'manifest.json', 'background.js', 'credentials.js', 'vault.js', 'auth.js',
+    MANIFEST, 'background.js', 'credentials.js', 'vault.js', 'auth.js',
     'api.js', 'options.html', 'options.js', 'popup.html', 'popup.js', 'pipeline.js',
     'jobs.js', 'operations.js', 'request-queue.js', 'history.js', 'cache.js', 'variables.js', 'profiles.js', 'theme.js', 'style.css', 'privacy.html',
 }
 
 
-def build_package():
-    manifest = json.loads((ROOT / 'manifest.json').read_text())
+def validate_source(path, name, content, files):
+    text = content.decode()
+    assert not re.search(r'\beval\s*\(|new\s+Function\s*\(', text), f'Dynamic code in {name}'
+    references = []
+    if path.suffix == '.js':
+        references = re.findall(r'(?:from\s+|import\s*)[\'\"](\./[^\'\"]+)[\'\"]', text)
+    elif path.suffix == '.html':
+        references = re.findall(r'(?:src|href)=[\'\"]([^\'\"]+)[\'\"]', text)
+    for reference in references:
+        if re.match(r'^[a-z]+:', reference) or reference.startswith('#'):
+            continue
+        target = (path.parent / reference.split('#')[0]).resolve().relative_to(ROOT).as_posix()
+        assert target in files, f'{name} references an unpackaged file: {target}'
+
+
+def read_runtime(files):
+    data = {}
+    for name in files:
+        path = ROOT / name
+        assert path.is_file() and not path.is_symlink(), f'Missing or linked runtime file: {name}'
+        data[name] = path.read_bytes()
+        if path.suffix == '.png':
+            assert data[name][:8] == b'\x89PNG\r\n\x1a\n', f'Invalid PNG: {name}'
+            expected_size = int(path.stem.split('-')[-1])
+            assert struct.unpack('>II', data[name][16:24]) == (expected_size, expected_size), f'Wrong icon dimensions: {name}'
+        if path.suffix in ['.js', '.html', '.css']:
+            validate_source(path, name, data[name], files)
+    return data
+
+
+def validate_manifest(manifest):
     assert manifest['manifest_version'] == 3, 'Only Manifest V3 is supported.'
     assert re.fullmatch(r'(?:0|[1-9]\d{0,4})(?:\.(?:0|[1-9]\d{0,4})){0,3}', manifest['version']), 'Invalid release version.'
     assert all(int(part) <= 65535 for part in manifest['version'].split('.')) and any(int(part) for part in manifest['version'].split('.')), 'Chrome version components must be 0–65535 and not all zero.'
@@ -31,25 +61,14 @@ def build_package():
     assert set(manifest['icons']) == {'16', '32', '48', '128'}, 'Required icon sizes are missing.'
     icons = set(manifest['icons'].values()) | set(manifest['action']['default_icon'].values())
     assert all(re.fullmatch(r'icons/icon-(16|32|48|128)\.png', path) for path in icons)
+    return icons
+
+
+def build_package():
+    manifest = json.loads((ROOT / MANIFEST).read_text())
+    icons = validate_manifest(manifest)
     files = sorted(RUNTIME | icons)
-    data = {}
-    for name in files:
-        path = ROOT / name
-        assert path.is_file() and not path.is_symlink(), f'Missing or linked runtime file: {name}'
-        data[name] = path.read_bytes()
-        if path.suffix == '.png':
-            assert data[name][:8] == b'\x89PNG\r\n\x1a\n', f'Invalid PNG: {name}'
-            expected_size = int(path.stem.split('-')[-1])
-            assert struct.unpack('>II', data[name][16:24]) == (expected_size, expected_size), f'Wrong icon dimensions: {name}'
-        if path.suffix in ['.js', '.html', '.css']:
-            text = data[name].decode()
-            assert not re.search(r'\beval\s*\(|new\s+Function\s*\(', text), f'Dynamic code in {name}'
-            references = re.findall(r'(?:from\s+|import\s*)[\'\"](\./[^\'\"]+)[\'\"]', text) if path.suffix == '.js' else re.findall(r'(?:src|href)=[\'\"]([^\'\"]+)[\'\"]', text) if path.suffix == '.html' else []
-            for reference in references:
-                if re.match(r'^[a-z]+:', reference) or reference.startswith('#'):
-                    continue
-                target = (path.parent / reference.split('#')[0]).resolve().relative_to(ROOT).as_posix()
-                assert target in files, f'{name} references an unpackaged file: {target}'
+    data = read_runtime(files)
     output = ROOT / 'dist'
     output.mkdir(exist_ok=True)
     archive = output / f'aem-cloud-manager-companion-{manifest["version"]}.zip'
@@ -62,7 +81,7 @@ def build_package():
     with ZipFile(archive) as zipped:
         assert zipped.testzip() is None, 'Archive CRC verification failed.'
         assert sorted(zipped.namelist()) == files
-        assert json.loads(zipped.read('manifest.json')) == manifest
+        assert json.loads(zipped.read(MANIFEST)) == manifest
         assert all(zipped.read(name) == content for name, content in data.items())
     report = {
         'version': manifest['version'], 'archive': archive.name,

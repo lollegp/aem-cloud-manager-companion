@@ -1,11 +1,14 @@
 // Theme behavior uses mocked Chrome storage; no Adobe requests are sent.
 export default async function themeBrowserSmoke(page, files) {
     const checks = [], errors = [], remoteCalls = [];
-    const check = (value, message) => {if (!value) throw new Error(message); checks.push(message);};
+    const check = (value, message) => {if (!value) {throw new Error(message);} checks.push(message);};
     page.on('pageerror', error => errors.push(error.message));
     await page.context().route('https://theme-fixture.test/**', route => {
         const name = new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({contentType: name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html', body: name === 'theme-samples.html' ? '<!doctype html><html><head><script src="theme.js"></script><link rel="stylesheet" href="style.css"></head><body class="popup"><main><h1>Appearance preview</h1><div class="card"><span class="pill finished">Success</span> <span class="pill updating">Updating</span> <span class="pill failed">Failed</span><div class="actions"><button class="action-start">Start</button><button class="action-stop">Stop</button><button class="action-approve">Approve</button><button class="action-reject">Reject</button><button class="primary">Save changes</button></div><label>Value<input value="Sample value"></label></div></main></body></html>' : files[name] || ''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({contentType, body: name === 'theme-samples.html' ? '<!doctype html><html><head><script src="theme.js"></script><link rel="stylesheet" href="style.css"></head><body class="popup"><main><h1>Appearance preview</h1><div class="card"><span class="pill finished">Success</span> <span class="pill updating">Updating</span> <span class="pill failed">Failed</span><div class="actions"><button class="action-start">Start</button><button class="action-stop">Stop</button><button class="action-approve">Approve</button><button class="action-reject">Reject</button><button class="primary">Save changes</button></div><label>Value<input value="Sample value"></label></div></main></body></html>' : files[name] || ''});
     });
     await page.context().route('https://cloudmanager.adobe.io/**', route => {remoteCalls.push(route.request().url());return route.abort();});
     await page.goto('https://theme-fixture.test/reset');
@@ -23,7 +26,7 @@ export default async function themeBrowserSmoke(page, files) {
             local: {get: async keys => Object.fromEntries(keys.filter(key => key in read()).map(key => [key, read()[key]])), set: async values => {const before = read(), after = {...JSON.parse(localStorage.getItem('themeFixture') || '{}'), ...values};localStorage.setItem('themeFixture', JSON.stringify(after));emit(before, {connectionProfiles:registry,...after});}},
             session: {get: async () => ({})}, onChanged: {addListener: listener => listeners.push(listener)}
         }, runtime: {sendMessage: async message => ({ok:true,data:message.action==='listProfiles'?{activeProfileId:profile.id,profiles:[profile]}:{saved:false}}), openOptionsPage() {}}};
-        window.addEventListener('storage', event => {if (event.key === 'themeFixture') emit(JSON.parse(event.oldValue || '{}'), JSON.parse(event.newValue || '{}'));});
+        window.addEventListener('storage', event => {if (event.key === 'themeFixture') {emit(JSON.parse(event.oldValue || '{}'), JSON.parse(event.newValue || '{}'));}});
     });
     await page.emulateMedia({colorScheme: 'light'});
     await page.goto('https://theme-fixture.test/options.html');

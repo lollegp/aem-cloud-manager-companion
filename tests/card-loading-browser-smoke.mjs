@@ -1,11 +1,14 @@
 // Deferred mocked responses verify per-card progress and independent rendering.
 export default async function cardLoadingBrowserSmoke(page, files) {
     const checks = [], errors = [];
-    const check = (ok,name) => { if(!ok) throw new Error(name); checks.push(name); };
+    const check = (ok,name) => { if(!ok) {throw new Error(name);} checks.push(name); };
     page.on('pageerror',error=>errors.push(error.message));
     await page.route('https://card-loading.test/**',route=>{
         const name = new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:files[name]||''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({contentType,body:files[name]||''});
     });
     await page.addInitScript(()=>{
         const session = {token:'token'};
@@ -25,11 +28,11 @@ export default async function cardLoadingBrowserSmoke(page, files) {
         const path = new URL(route.request().url()).pathname;
         const send = (data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)}).catch(()=>{});
         if(route.request().method() !== 'GET') {await mutation;return send({});}
-        if(path.endsWith('/environments')) return send({_embedded:{environments:[{id:'1',name:'Development',type:'dev'},{id:'2',name:'Other',type:'dev'}]}});
-        if(path.endsWith('/pipelines')) return send({_embedded:{pipelines:[pipeline('1'),pipeline('2'),pipeline('3')]}});
+        if(path.endsWith('/environments')) {return send({_embedded:{environments:[{id:'1',name:'Development',type:'dev'},{id:'2',name:'Other',type:'dev'}]}});}
+        if(path.endsWith('/pipelines')) {return send({_embedded:{pipelines:[pipeline('1'),pipeline('2'),pipeline('3')]}});}
         if(path.endsWith('/pipeline/1/execution')) {await fast;return send({id:'run1',status:'FINISHED',_embedded:{stepStates:[]}});}
         if(path.endsWith('/pipeline/2/execution')) {await slow;return send({message:'Temporarily unavailable'},503);}
-        if(path.endsWith('/pipeline/3/execution')) return send({id:'run3',status:'FINISHED',_embedded:{stepStates:[]}});
+        if(path.endsWith('/pipeline/3/execution')) {return send({id:'run3',status:'FINISHED',_embedded:{stepStates:[]}});}
         if(path.endsWith('/executions')) {
             historyCalls++;
             if(historyCalls === 1) {await history;return send({_totalNumberOfItems:2,_embedded:{executions:[{id:'old',status:'FINISHED'}]},_links:{next:{href:path+'?start=1&limit=20'}}});}

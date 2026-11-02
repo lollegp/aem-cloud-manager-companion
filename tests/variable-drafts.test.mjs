@@ -11,7 +11,7 @@ test('session drafts survive reopening, preserve secrets and removals, and clear
     const draft={original:[{name:'OLD',type:'string',value:'old'}],edits:[{name:'SECRET',type:'secretString',value:'replacement'},{name:'OLD',remove:true}]};
     await saveVariableDraft(key,draft,storage);
     assert.deepEqual(await loadVariableDraft(key,storage),draft);
-    for(const other of [variableDraftKey(snapshotKey(config),'2'),variableDraftKey(snapshotKey({...config,profileId:'two'}),'1'),variableDraftKey(snapshotKey({...config,orgId:'other'}),'1')])assert.equal(await loadVariableDraft(other,storage),undefined);
+    for(const other of [variableDraftKey(snapshotKey(config),'2'),variableDraftKey(snapshotKey({...config,profileId:'two'}),'1'),variableDraftKey(snapshotKey({...config,orgId:'other'}),'1')]){assert.equal(await loadVariableDraft(other,storage),undefined);}
     assert.ok(key.startsWith('profile:one:'));
     await saveVariableDraft(key,undefined,storage);
     assert.equal(await loadVariableDraft(key,storage),undefined);

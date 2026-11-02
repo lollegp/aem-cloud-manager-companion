@@ -1,11 +1,14 @@
 // Uses real browser Web Crypto, the actual worker handler, and mock Chrome/Adobe APIs.
 export default async function authBrowserSmoke(page, files) {
     const checks = [], errors = [];
-    const check = (ok, name) => { if (!ok) throw new Error(name); checks.push(name); };
+    const check = (ok, name) => { if (!ok) {throw new Error(name);} checks.push(name); };
     page.on('pageerror', error => errors.push(error.message));
     await page.route('https://auth-companion.test/**', route => {
         const name = new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({headers: name.endsWith('.html') && files['manifest.json'] ? {'Content-Security-Policy': JSON.parse(files['manifest.json']).content_security_policy.extension_pages} : {}, contentType: name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html', body: files[name] || ''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({headers: name.endsWith('.html') && files['manifest.json'] ? {'Content-Security-Policy': JSON.parse(files['manifest.json']).content_security_policy.extension_pages} : {}, contentType, body: files[name] || ''});
     });
     await page.addInitScript(() => {
         const local = JSON.parse(localStorage.getItem('fixtureLocal') || 'null') || {
@@ -18,14 +21,14 @@ export default async function authBrowserSmoke(page, files) {
         window.fixtureProfileSession = () => session[`profileSession:${local.connectionProfiles.activeProfileId}`] || {};
         window.fixtureStorageWrites = []; window.fixtureAccess = [];
         const persist = () => { localStorage.setItem('fixtureLocal', JSON.stringify(local)); sessionStorage.setItem('fixtureSession', JSON.stringify(session)); };
-        const emit = (changes, name) => { if (Object.keys(changes).length) queueMicrotask(() => listeners.forEach(fn => fn(changes, name))); };
+        const emit = (changes, name) => { if (Object.keys(changes).length) {queueMicrotask(() => listeners.forEach(fn => fn(changes, name)));} };
         const storage = (data, name) => ({
             get: async keys => structuredClone(keys == null ? data : Object.fromEntries(keys.filter(k => k in data).map(k => [k, data[k]]))),
             set: async values => {
                 window.fixtureStorageWrites.push({name, values: structuredClone(values)});
                 const changes = {};
                 for (const [key, value] of Object.entries(values)) {
-                    if (JSON.stringify(data[key]) !== JSON.stringify(value)) changes[key] = {oldValue: data[key], newValue: value};
+                    if (JSON.stringify(data[key]) !== JSON.stringify(value)) {changes[key] = {oldValue: data[key], newValue: value};}
                     data[key] = structuredClone(value);
                 }
                 persist(); emit(changes, name);
@@ -33,7 +36,7 @@ export default async function authBrowserSmoke(page, files) {
             remove: async keys => {
                 const changes = {};
                 for (const key of Array.isArray(keys) ? keys : [keys]) {
-                    if (key in data) changes[key] = {oldValue: data[key]};
+                    if (key in data) {changes[key] = {oldValue: data[key]};}
                     delete data[key];
                 }
                 persist(); emit(changes, name);
@@ -46,13 +49,14 @@ export default async function authBrowserSmoke(page, files) {
             runtime: {id: 'fixture-extension', getURL: name => `https://auth-companion.test/${name}`,
                 onInstalled: {addListener() {}}, onStartup: {addListener() {}}, onMessage: {addListener: fn => { handler = fn; }},
                 sendMessage: async message => {
-                    background ||= import('/background.js'); await background;
+                    background ||= import('./background.js'); await background;
                     return new Promise(resolve => handler(message, {id: 'fixture-extension', url: location.href}, resolve));
                 }
             }
         };
-        window.sendFrom = async (sender, message = {type: 'credentials', action: 'status'}) => {
-            background ||= import('/background.js'); await background;
+        window.sendFrom = async (sender, message) => {
+            message ??= {type: 'credentials', action: 'status'};
+            background ||= import('./background.js'); await background;
             return new Promise(resolve => handler(message, sender, resolve));
         };
     });
@@ -67,7 +71,7 @@ export default async function authBrowserSmoke(page, files) {
     await page.route('https://cloudmanager.adobe.io/**', route => { apiRequests++; return route.fulfill({contentType: 'application/json', body: '{"_embedded":{"environments":[]}}'}); });
     const ready = () => page.waitForFunction(() => !document.getElementById('generate').disabled);
     const click = async id => {
-        if (['saveVault','forgetSecret','generate','test','clear','save'].includes(id) && !await page.locator('.advanced-settings').evaluate(el=>el.open)) await page.locator('.advanced-settings > summary').click();
+        if (['saveVault','forgetSecret','generate','test','clear','save'].includes(id) && !await page.locator('.advanced-settings').evaluate(el=>el.open)) {await page.locator('.advanced-settings > summary').click();}
         await page.locator(`#${id}`).click(); await ready();
     };
     await page.goto('https://auth-companion.test/reset');
@@ -104,14 +108,14 @@ export default async function authBrowserSmoke(page, files) {
     await page.evaluate(() => sessionStorage.clear());
     const beforeRestart = tokenRequests;
     await page.goto('https://auth-companion.test/popup.html');
-    await page.waitForFunction(() => !document.getElementById('refresh').disabled);
+    await page.waitForFunction(() => !document.getElementById('refresh').disabled && document.getElementById('message').textContent.includes('Catalog updated'));
     check(tokenRequests === beforeRestart + 1, 'popup renews silently after simulated browser restart');
     check(await page.evaluate(() => !!window.fixtureProfileSession().token), 'popup receives renewed token');
     await page.goto('https://auth-companion.test/options.html'); await ready();
     await page.evaluate(() => chrome.storage.session.set({[`profileSession:${fixtureLocal.connectionProfiles.activeProfileId}`]:{...window.fixtureProfileSession(),tokenExpiresAt:1}}));
     const beforeConcurrent = tokenRequests;
     await page.evaluate(async () => {
-        const api = await import('/api.js');
+        const api = await import('./api.js');
         await Promise.all(Array.from({length: 5}, () => api.request('/api/program/1/environments')));
     });
     check(tokenRequests === beforeConcurrent + 1, 'concurrent expired-token requests share one renewal');

@@ -25,7 +25,7 @@ const groupViews = new Map(), pipelineReads = new Map(), activePipelineActions =
 const node = (tag, text = '', className = '') => {
     const n = document.createElement(tag);
     n.textContent = String(text ?? '');
-    if (className) n.className = className;
+    if (className) {n.className = className;}
     return n;
 };
 
@@ -83,16 +83,22 @@ function error(e) {
 }
 
 function restoreControl(control, disabled) {
-    if (!control.isConnected) return;
-    if (connectionChanged && $('content').contains(control)) control.disabled = true;
+    if (!control.isConnected) {return;}
+    if (connectionChanged && $('content').contains(control)) {control.disabled = true;}
     else {
         const history = control.closest('.history-list');
         control.disabled = history ? history.getAttribute('aria-busy') === 'true' : disabled;
     }
 }
 
+function finishReadView(completed) {
+    $('viewLoader').hidden=true;
+    if(!completed){$('content').replaceChildren(node('p','This view could not be loaded. Click Refresh to retry, or choose another tab.','empty'));}
+    $('content').hidden=false;$('content').inert=!completed;$('content').setAttribute('aria-busy','false');
+}
+
 async function run(fn, reading = false) {
-    if (busy || (backgroundPending && !reading)) return false;
+    if (busy || (backgroundPending && !reading)) {return false;}
     environmentPollController?.abort();
     busy = true;
     const controls = [...document.querySelectorAll(reading ? '#content button, #content input, #content textarea, #content select, #refresh' : 'button:not(#settings), input, textarea, select')];
@@ -108,39 +114,37 @@ async function run(fn, reading = false) {
     try {
         setMessage('Loading...');
         const result = await fn();
-        if (result !== false) setMessage('Updated just now');
+        if (result !== false) {setMessage('Updated just now');}
         completed=true;
         return true;
     } catch (e) {
-        if (!reading || !historyController.signal.aborted) error(e);
+        if (!reading || !historyController.signal.aborted) {error(e);}
         return false;
     } finally {
         busy = false;
         if(reading){
-            $('viewLoader').hidden=true;
-            if(!completed)$('content').replaceChildren(node('p','This view could not be loaded. Click Refresh to retry, or choose another tab.','empty'));
-            $('content').hidden=false;$('content').inert=!completed;$('content').setAttribute('aria-busy','false');
+            finishReadView(completed);
         }
         controls.forEach((control,index) => restoreControl(control,disabled[index]));
-        if (!connectionChanged) syncEnvironmentIndicators();
-        if(usesBackground())void refreshBackgroundStatus();
+        if (!connectionChanged) {syncEnvironmentIndicators();}
+        if(usesBackground()){void refreshBackgroundStatus();}
         if(backgroundRefreshNeeded && !initializingProfiles){backgroundRefreshNeeded=false;queueMicrotask(()=>navigate(true));}
         if(pendingProfileNavigation){pendingProfileNavigation=false;queueMicrotask(()=>navigate());}
     }
 }
 
 async function navigate(force = false) {
-    if (busy && !activeRead) return;
+    if (busy && !activeRead) {return;}
     const id = ++navigationId;
     if (activeRead) {
         historyController.abort();
         await activeRead;
     }
-    if (id !== navigationId) return;
+    if (id !== navigationId) {return;}
     const pending = run(() => refresh(force), true);
     activeRead = pending;
     try { await pending; }
-    finally { if (activeRead === pending) activeRead = null; }
+    finally { if (activeRead === pending) {activeRead = null;} }
 }
 
 async function updateLocalPreferences() {
@@ -157,7 +161,7 @@ function pill(s) {
 
 function variableStatusRibbon(status) {
     const ribbon=pill(status);
-    ribbon.textContent=String(status).replace(/_/g,' ').replace(/\b\w/g,letter=>letter.toUpperCase());
+    ribbon.textContent=String(status).replaceAll('_',' ').replace(/\b\w/g,letter=>letter.toUpperCase());
     return ribbon;
 }
 
@@ -206,7 +210,7 @@ function environmentOrderControls(env) {
         const button = btn(label, () => run(async () => {
             const ids = environments.map(item => String(item.id));
             const target = index + offset;
-            if (index < 0 || target < 0 || target >= ids.length) return;
+            if (index < 0 || target < 0 || target >= ids.length) {return;}
             [ids[index], ids[target]] = [ids[target], ids[index]];
             await saveProfilePreference(connection,environmentOrderKey(),ids);
             await updateLocalPreferences();
@@ -218,27 +222,31 @@ function environmentOrderControls(env) {
     return controls;
 }
 
+function appendUniquePage(items, page, seenIds) {
+    for (const item of page) {
+        const id = item.id == null ? null : String(item.id);
+        if (id !== null && seenIds.has(id)) {continue;}
+        if (id !== null) {seenIds.add(id);}
+        items.push(item);
+    }
+}
+
 async function listAll(path, key, signal, quiet = false) {
     const items = [], visited = new Set(), seenIds = new Set();
     while (path) {
-        if (visited.has(path)) throw new Error('Repeated API pagination link.');
+        if (visited.has(path)) {throw new Error('Repeated API pagination link.');}
         visited.add(path);
         signal?.throwIfAborted();
-        if(!quiet)setMessage(`Loading ${key}, page ${visited.size}...`);
+        if(!quiet){setMessage(`Loading ${key}, page ${visited.size}...`);}
         const data = await request(path, 'GET', undefined, {signal});
         signal?.throwIfAborted();
         const page = embedded(data, key);
         // Some responses retain a next link beyond the last result page.
-        if (!page.length) break;
+        if (!page.length) {break;}
         const previousCount = items.length;
-        for (const item of page) {
-            const id = item.id == null ? null : String(item.id);
-            if (id !== null && seenIds.has(id)) continue;
-            if (id !== null) seenIds.add(id);
-            items.push(item);
-        }
+        appendUniquePage(items, page, seenIds);
         const total = data._totalNumberOfItems;
-        if (Number.isInteger(total) && total >= 0 && items.length >= total) break;
+        if (Number.isInteger(total) && total >= 0 && items.length >= total) {break;}
         if (items.length === previousCount) {
             throw new Error(`Invalid ${key} pagination: page ${visited.size} returned no new records. Refresh to retry.`);
         }
@@ -270,11 +278,11 @@ async function loadEnvironmentPreferences(programId, signal) {
 async function parallelReads(items, read) {
     let cursor = 0;
     const results = await Promise.allSettled(Array.from({length:Math.min(4,items.length)},async () => {
-        while (cursor < items.length) await read(items[cursor++]);
+        while (cursor < items.length) {await read(items[cursor++]);} // NOSONAR: Each worker must finish its item to enforce the concurrency limit.
     }));
     // Wait for every reader before callers restore previous state after failure.
     const failure = results.find(result => result.status === 'rejected');
-    if (failure) throw failure.reason;
+    if (failure) {throw failure.reason;}
 }
 
 async function loadPipelines(programId, signal) {
@@ -288,7 +296,7 @@ async function loadPipelines(programId, signal) {
                 signal.throwIfAborted();
                 Object.assign(pipeline, details);
             } catch (e) {
-                if (signal?.aborted) throw signal.reason;
+                if (signal?.aborted) {throw signal.reason;}
                 pipeline.detailsError = e.message;
             }
         }
@@ -314,14 +322,14 @@ async function refreshEnvironmentList(signal, config = connection, share = false
         return;
     }
     const key = snapshotKey(config), generation = viewGeneration;
-    if (!environmentRead || environmentRead.key !== key || environmentRead.generation !== generation) {
+    if (environmentRead?.key !== key || environmentRead.generation !== generation) {
         const sharedSignal = AbortSignal.any([historyController.signal, AbortSignal.timeout(30000)]);
         const revision=++environmentReadRevision;
         const entry = {key, generation};
         entry.promise = listAll(pathFor(config.programId,'/environments'),'environments',sharedSignal,true).then(fresh => {
             sharedSignal.throwIfAborted();
-            if (generation === viewGeneration && revision===environmentReadRevision) mergeEnvironmentList(fresh);
-        }).finally(() => { if (environmentRead === entry) environmentRead = null; });
+            if (generation === viewGeneration && revision===environmentReadRevision) {mergeEnvironmentList(fresh);}
+        }).finally(() => { if (environmentRead === entry) {environmentRead = null;} });
         environmentRead = entry;
     }
     await abortable(environmentRead.promise,signal);
@@ -332,15 +340,15 @@ async function readVariableStatus(id, signal, config = connection) {
     const data = await request(pathFor(config.programId,`/environment/${encodeURIComponent(id)}/variables`),'GET',undefined,{signal,expectedConfig:config});
     signal.throwIfAborted();
     const environment = environments.find(item => String(item.id) === String(id));
-    if (!environment) throw new Error('Environment no longer available. Refresh before continuing.');
+    if (!environment) {throw new Error('Environment no longer available. Refresh before continuing.');}
     const variables = embedded(data,'variables');
-    if(usesBackground() && environment.variableUpdateStatus!=='updating')Object.assign(environment,await pendingVariableState(config,id));
+    if(usesBackground() && environment.variableUpdateStatus!=='updating'){Object.assign(environment,await pendingVariableState(config,id));}
     Object.assign(environment,variableUpdateState(environment,variables));
     return variables;
 }
 
 function pipelineEnvironmentBlocked(pipeline) {
-    if(!pipeline)return false;
+    if(!pipeline){return false;}
     return environmentIds(pipeline).some(id => environmentBlocksStart(environments.find(env => String(env.id) === id)));
 }
 
@@ -350,14 +358,14 @@ function syncEnvironmentIndicators() {
         updateGroupActions(state);
         for (const [id,card] of state.rows || []) {
             const start = card.querySelector('.action-start');
-            if (start) start.disabled = busy || backgroundPending || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));
+            if (start) {start.disabled = busy || backgroundPending || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));}
             const approve=card.querySelector('.action-approve');
-            if(approve)approve.disabled=busy || backgroundPending || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));
+            if(approve){approve.disabled=busy || backgroundPending || !!state.loading || pipelineEnvironmentBlocked(pipelines.find(pipeline=>String(pipeline.id)===id));}
         }
     }
     for (const card of $('content').querySelectorAll('[data-environment-id]')) {
         const env = environments.find(item=>String(item.id)===card.dataset.environmentId);
-        if(!env)continue;
+        if(!env){continue;}
         const status = env.variableUpdateStatus || env.status;
         const badge = card.querySelector(':scope > .line > .pill');
         badge.replaceWith(pill(status));
@@ -366,10 +374,10 @@ function syncEnvironmentIndicators() {
 
 function scheduleEnvironmentPoll() {
     clearTimeout(environmentPollTimer);
-    if (connectionChanged || !environments.some(env => env.variableUpdateStatus === 'updating' || String(env.status).toLowerCase() === 'updating')) return;
+    if (connectionChanged || !environments.some(env => env.variableUpdateStatus === 'updating' || String(env.status).toLowerCase() === 'updating')) {return;}
     const generation = viewGeneration, config = connection;
     environmentPollTimer = setTimeout(async () => {
-        if (generation !== viewGeneration || connectionChanged) return;
+        if (generation !== viewGeneration || connectionChanged) {return;}
         if (busy) {scheduleEnvironmentPoll();return;}
         environmentPollController=new AbortController();
         const signal = AbortSignal.any([historyController.signal,environmentPollController.signal,AbortSignal.timeout(30000)]);
@@ -386,8 +394,8 @@ function scheduleEnvironmentPoll() {
                 setMessage(environments.find(env=>String(env.id)===selectedEnvironment)?.variableUpdateStatus === 'updating'?'Variable update in progress. Pipeline starts are blocked.':'Environment status refreshed.');
             }
         } catch (error) {
-            if (!signal.aborted) setMessage(`Environment status could not be checked: ${error.message}. Pipeline starts stay blocked until verified.`,true);
-        } finally {if (generation === viewGeneration && !connectionChanged) scheduleEnvironmentPoll();}
+            if (!signal.aborted) {setMessage(`Environment status could not be checked: ${error.message}. Pipeline starts stay blocked until verified.`,true);}
+        } finally {if (generation === viewGeneration && !connectionChanged) {scheduleEnvironmentPoll();}}
     },5000);
 }
 
@@ -396,8 +404,9 @@ async function persistSnapshot(signal) {
     try {
         await saveSnapshot(connection, {updatedAt:catalogUpdatedAt,environments,pipelines,executions:executionRecords},signal);
         cacheWarning = false;
-    } catch (error) {
-        if (signal?.aborted) throw signal.reason;
+    } catch {
+        if (signal?.aborted) {throw signal.reason;}
+        // Cache failure must not prevent the live view from working.
         cacheWarning = true;
     }
 }
@@ -410,11 +419,30 @@ async function refresh(force = false) {
     const signal = AbortSignal.any([AbortSignal.timeout(45000),historyController.signal]);
     try { return await refreshView(signal, force); }
     catch (error) {
-        if (signal.aborted && signal.reason?.name !== 'TimeoutError') throw new Error('Connection or view changed. Click Refresh to load the current configuration.', {cause: error});
-        if (signal.aborted) throw new Error(`Refresh stopped after 45 seconds. Last step: ${$('message').textContent} Check Settings or retry Refresh.`, {cause: error});
+        if (signal.aborted && signal.reason?.name !== 'TimeoutError') {throw new Error('Connection or view changed. Click Refresh to load the current configuration.', {cause: error});}
+        if (signal.aborted) {throw new Error(`Refresh stopped after 45 seconds. Last step: ${$('message').textContent} Check Settings or retry Refresh.`, {cause: error});}
         throw error;
     }
-    finally {if(!connectionChanged&&!historyController.signal.aborted)scheduleEnvironmentPoll();}
+    finally {if(!connectionChanged&&!historyController.signal.aborted){scheduleEnvironmentPoll();}}
+}
+
+async function refreshCatalog(s, signal) {
+    // Keep the last known catalog if either list request fails.
+    const previousEnvironments = environments, previousPipelines = pipelines, previousUpdatedAt = catalogUpdatedAt;
+    const catalogStartedAt=Date.now();
+    try {
+        await parallelReads([
+            () => refreshEnvironmentList(signal,s),
+            () => loadPipelines(s.programId,signal)
+        ], read => read());
+        catalogUpdatedAt = catalogStartedAt;
+        const liveIds = new Set(pipelines.map(p => String(p.id)));
+        executionRecords = Object.fromEntries(Object.entries(executionRecords).filter(([id]) => liveIds.has(id)));
+        await persistSnapshot(signal);
+    } catch (error) {
+        environments = previousEnvironments; pipelines = previousPipelines; catalogUpdatedAt = previousUpdatedAt;
+        throw error;
+    }
 }
 
 async function refreshView(signal, force) {
@@ -431,7 +459,7 @@ async function refreshView(signal, force) {
     }
     snapshotIdentity = identity;
     connection = s;
-    if(s.profileId)$('programProfile').value=s.profileId;
+    if(s.profileId){$('programProfile').value=s.profileId;}
     connectionChanged = false;
     $('environment').classList.toggle('hidden', tab !== 'variables' || !environments.length);
     $('programLabel').textContent=s.profileName || (s.programId ? `Program ${s.programId}` : 'Configure connection to begin');
@@ -439,7 +467,7 @@ async function refreshView(signal, force) {
         $('content').replaceChildren(node('h2','Connect your first program'),node('p', 'Add your Adobe credentials and program ID to get started.'),btn('Open Settings',()=>chrome.runtime.openOptionsPage(),'primary'));
         return;
     }
-    $('programLabel').textContent = `${s.profileName ? `${s.profileName} · ` : ''}Program ${s.programId}`;
+    $('programLabel').textContent = (s.profileName ? s.profileName + ' · ' : '') + `Program ${s.programId}`;
     if (!catalogUpdatedAt && !force) {
         const cached = await loadSnapshot(s, signal);
         if (cached?.updatedAt) {
@@ -450,113 +478,109 @@ async function refreshView(signal, force) {
     }
     const reloadCatalog = force || !catalogUpdatedAt;
     if (reloadCatalog) {
-        // Keep the last known catalog if either list request fails.
-        const previousEnvironments = environments, previousPipelines = pipelines, previousUpdatedAt = catalogUpdatedAt;
-        const catalogStartedAt=Date.now();
-        try {
-            await parallelReads([
-                () => refreshEnvironmentList(signal,s),
-                () => loadPipelines(s.programId,signal)
-            ], read => read());
-            catalogUpdatedAt = catalogStartedAt;
-            const liveIds = new Set(pipelines.map(p => String(p.id)));
-            executionRecords = Object.fromEntries(Object.entries(executionRecords).filter(([id]) => liveIds.has(id)));
-            await persistSnapshot(signal);
-        } catch (error) {
-            environments = previousEnvironments; pipelines = previousPipelines; catalogUpdatedAt = previousUpdatedAt;
-            throw error;
-        }
+        await refreshCatalog(s, signal);
     }
     if (!reloadCatalog && ['environments','variables'].includes(tab)) {
         await refreshEnvironmentList(signal,s);
         await persistSnapshot(signal);
     }
+    return renderCurrentView(s, signal, force, reloadCatalog);
+}
+
+async function renderCurrentView(s, signal, force, reloadCatalog) {
     if(tab==='environments') {
         await parallelReads(environments.filter(env=>env.variableUpdateStatus), environment => readVariableStatus(environment.id,signal,s));
         await persistSnapshot(signal);
     }
     await loadEnvironmentPreferences(s.programId, signal);
     signal.throwIfAborted();
-    if (tab !== 'variables') $('content').replaceChildren();
+    if (tab !== 'variables') {$('content').replaceChildren();}
     if (tab === 'pipelines') {
         renderPipelines(s.programId);
         if (force) {
             await parallelReads([...groupViews.values()].filter(state=>state.section.open), state => refreshGroup(state,signal));
         }
     }
-    if (tab === 'environments') renderEnvironments();
-    if (tab === 'variables') await renderVariables(s.programId,signal);
+    if (tab === 'environments') {renderEnvironments();}
+    if (tab === 'variables') {await renderVariables(s.programId,signal);}
     setMessage(`${force || reloadCatalog ? 'Catalog updated just now' : 'Cached catalog · expand an environment to refresh'}${cacheWarning ? ' · Session cache unavailable' : ''}`);
-    if(tab==='variables')setMessage('Variables checked just now');
-    if(tab==='environments')setMessage('Environments updated just now');
+    if(tab==='variables'){setMessage('Variables checked just now');}
+    if(tab==='environments'){setMessage('Environments updated just now');}
     $('message').title = `Catalog checked: ${new Date(catalogUpdatedAt).toLocaleString()}`;
-    if (tab === 'variables' && environments.find(env=>String(env.id)===selectedEnvironment)?.variableUpdateStatus === 'updating') setMessage('Variable update in progress. Pipeline starts are blocked until the environment is ready.');
+    if (tab === 'variables' && environments.find(env=>String(env.id)===selectedEnvironment)?.variableUpdateStatus === 'updating') {setMessage('Variable update in progress. Pipeline starts are blocked until the environment is ready.');}
     scheduleEnvironmentPoll();
     return false;
 }
 
 function executionStepStates(ex) {
-    return ex?._embedded?.stepStates || ex?._embedded?.['stepStates'] || [];
+    return ex?._embedded?.stepStates || [];
 }
 
 async function currentExecution(pid, pipeline, signal, expectedConfig, forceDetails = false) {
     const base = pathFor(pid, `/pipeline/${encodeURIComponent(pipeline.id)}`);
     const current = await request(base + '/execution', 'GET', undefined, {signal,expectedConfig});
     const execution = current?.id ? current : embedded(current, 'executions')[0];
-    if (!execution?.id) return null;
+    if (!execution?.id) {return null;}
     if (forceDetails || !execution._embedded?.stepStates) {
         const details = await request(base + `/execution/${encodeURIComponent(execution.id)}`, 'GET', undefined, {signal,expectedConfig});
-        if (String(details?.id) !== String(execution.id)) throw new Error('Unexpected execution details returned.');
+        if (String(details?.id) !== String(execution.id)) {throw new Error('Unexpected execution details returned.');}
         return details;
     }
     return execution;
 }
 
+async function readLatestExecution(pid, pipeline, signal, execution) {
+    try {
+        const latest = await request(pathFor(pid, `/pipeline/${encodeURIComponent(pipeline.id)}/executions?start=0&limit=1`), 'GET', undefined, {signal});
+        const latestExecution = latest?.id ? latest : embedded(latest, 'executions')[0] || null;
+        return {execution:latestExecution || execution || null, historical:true, missing:true, historyChecked:!latestExecution && !execution, stale:false};
+    } catch (error) {
+        if (signal?.aborted) { throw signal.reason; }
+        return {execution:execution || null, historical:true, missing:true, stale:true, error:`Last execution status could not be refreshed: ${error.message}`};
+    }
+}
+
+async function resolveFinalExecution(pid, pipeline, signal, execution, missing) {
+    try {
+        const final = await request(pathFor(pid, `/pipeline/${encodeURIComponent(pipeline.id)}/execution/${encodeURIComponent(execution.id)}`), 'GET', undefined, {signal});
+        if (String(final?.id) !== String(execution.id)) { throw new Error('Unexpected execution details returned.'); }
+        return {execution:final, historical:missing, missing, stale:false};
+    } catch (error) {
+        if (signal?.aborted) { throw signal.reason; }
+        return {execution, historical:true, missing, stale:true, error:`Last execution status could not be refreshed: ${error.message}`};
+    }
+}
+
 async function displayedExecution(pid, pipeline, signal, previous, forceDetails = false) {
     let current = null, missing;
     try {
-        current = await currentExecution(pid,pipeline,signal,undefined,forceDetails);
+        current = await currentExecution(pid, pipeline, signal, undefined, forceDetails);
         missing = !current;
     } catch (error) {
-        if (signal?.aborted || !/^404\b/.test(error.message || '')) throw error;
+        if (signal?.aborted || !/^404\b/.test(error.message || '')) { throw error; }
         missing = true;
     }
     const execution = current || previous?.execution || null;
     const active = execution && ['NOT_STARTED','RUNNING','WAITING','CANCELLING'].includes(execution.status);
-    // Adobe may remove /execution as soon as the pipeline becomes idle. Resolve
-    // the observed run directly rather than retaining a cached active status.
+    // Resolve an observed active run before reading history when Adobe removes /execution.
     if (execution?.id && active && (missing || pipeline.status === 'IDLE')) {
-        try {
-            const final = await request(pathFor(pid,`/pipeline/${encodeURIComponent(pipeline.id)}/execution/${encodeURIComponent(execution.id)}`),'GET',undefined,{signal});
-            if (String(final?.id) !== String(execution.id)) throw new Error('Unexpected execution details returned.');
-            if (!missing) return {execution:final,historical:false,missing:false,stale:false};
-            current = final;
-        } catch (error) {
-            if (signal?.aborted) throw signal.reason;
-            return {execution,historical:true,missing,stale:true,error:`Last execution status could not be refreshed: ${error.message}`};
-        }
+        const final = await resolveFinalExecution(pid, pipeline, signal, execution, missing);
+        if (final.stale || !missing) { return final; }
     }
-    // If current run is missing, first resolve a cached active run above.
-    // Then read one latest summary so every environment shows the last outcome.
-    if (missing) {
-        try {
-            const latest = await request(pathFor(pid,`/pipeline/${encodeURIComponent(pipeline.id)}/executions?start=0&limit=1`),'GET',undefined,{signal});
-            const latestExecution = latest?.id ? latest : embedded(latest,'executions')[0] || null;
-            return {execution:latestExecution || execution || null,historical:true,missing:true,historyChecked:!latestExecution&&!execution,stale:false};
-        } catch (error) {
-            if (signal?.aborted) throw signal.reason;
-            return {execution:execution || null,historical:true,missing:true,stale:true,error:`Last execution status could not be refreshed: ${error.message}`};
-        }
-    }
-    return {execution,historical:missing,missing,stale:false};
+    if (missing) { return readLatestExecution(pid, pipeline, signal, execution); }
+    return {execution, historical:missing, missing, stale:false};
 }
 
 function targetLabels(pipeline) {
     return environmentIds(pipeline).map(id => environmentLabel(environments.find(env => String(env.id) === id) || {id}));
 }
 
+function eligiblePipeline(pipeline, action) {
+    return action === 'start' ? pipeline.status === 'IDLE' : canStopPipeline(pipeline);
+}
+
 async function groupAction(pid, group, action, singlePipeline, expectedExecutionId) {
-    if (busy || backgroundPending || connectionChanged || groupViews.get(group.id)?.loading) return;
+    if (busy || backgroundPending || connectionChanged || groupViews.get(group.id)?.loading) {return;}
     const actionConfig = connection, signal = historyController.signal, generation = viewGeneration;
     const latestSettings = await abortable(settings(),signal);
     if (generation !== viewGeneration || snapshotKey(latestSettings) !== snapshotIdentity) {
@@ -564,14 +588,14 @@ async function groupAction(pid, group, action, singlePipeline, expectedExecution
         return;
     }
     const decision = ['promote', 'reject'].includes(action);
-    if (decision && !isProduction(group.environment)) return;
+    if (decision && !isProduction(group.environment)) {return;}
     const candidates = (singlePipeline ? [singlePipeline] : group.pipelines).filter(p =>
-        decision ? group.approvals?.has(String(p.id)) : action === 'start' ? p.status === 'IDLE' : canStopPipeline(p));
-    if (!candidates.length) return;
+        decision ? group.approvals?.has(String(p.id)) : eligiblePipeline(p, action));
+    if (!candidates.length) {return;}
     const title = group.environment ? environmentLabel(group.environment) : group.name;
     const details = candidates.map(p => `${p.name || p.id} → ${targetLabels(p).join(', ') || 'No deployment target'}`).join('\n');
     const actionLabel = {start: 'Start', stop: 'Stop', promote: 'Approve', reject: 'Reject'}[action];
-    if (!confirmAction(`${actionLabel.toUpperCase()} ${candidates.length} pipeline${candidates.length === 1 ? '' : 's'} in ${title}?\n\n${details}\n\nActions affect each entire pipeline, including all listed environments. You can close the popup; this action continues in the background.`)) return;
+    if (!confirmAction(`${actionLabel.toUpperCase()} ${candidates.length} pipeline${candidates.length === 1 ? '' : 's'} in ${title}?\n\n${details}\n\nActions affect each entire pipeline, including all listed environments. You can close the popup; this action continues in the background.`)) {return;}
     await run(async () => {
         for(const pipeline of candidates){activePipelineActions.add(String(pipeline.id));syncPipelineLoading(String(pipeline.id));}
         let results;
@@ -581,7 +605,7 @@ async function groupAction(pid, group, action, singlePipeline, expectedExecution
         },actionConfig);}finally{
             for(const pipeline of candidates){activePipelineActions.delete(String(pipeline.id));syncPipelineLoading(String(pipeline.id));}
         }
-        if (signal.aborted || generation !== viewGeneration) throw new Error('View changed while the background action completed. Refresh to check its result.');
+        if (signal.aborted || generation !== viewGeneration) {throw new Error('View changed while the background action completed. Refresh to check its result.');}
         let refreshError = '';
         try {
             await parallelReads([...groupViews.values()].filter(state=>state.section.open && state.group.pipelines.some(p=>candidates.some(candidate=>String(candidate.id)===String(p.id)))),state=>refreshGroup(state));
@@ -589,7 +613,7 @@ async function groupAction(pid, group, action, singlePipeline, expectedExecution
         const summary = node('div', '', 'batch-results');
         summary.setAttribute('role', 'status');
         summary.append(node('strong', `${actionLabel} results · ${title}`));
-        for (const result of results) summary.append(node('p', `${result.pipeline.name || result.pipeline.id}: ${result.message}`, result.ok ? 'muted' : 'error'));
+        for (const result of results) {summary.append(node('p', `${result.pipeline.name || result.pipeline.id}: ${result.message}`, result.ok ? 'muted' : 'error'));}
         $('content').prepend(summary);
         setMessage(`Group action finished.${refreshError}`, !!refreshError || results.some(result => !result.ok));
         return false;
@@ -619,12 +643,12 @@ function renderPipelines(pid) {
         groupViews.set(group.id,state);
         // Native buttons support keyboard activation; rendering cached rows makes no requests.
         summary.addEventListener('click', () => {
-            if (state.generation !== viewGeneration) return;
+            if (state.generation !== viewGeneration) {return;}
             if (!section.open) {
                 expandedEnvironments.add(group.id);
-                if (!state.rendered) renderGroupBody(state,pid);
-                if (!busy) refreshGroup(state).catch(error);
-            } else expandedEnvironments.delete(group.id);
+                if (!state.rendered) {renderGroupBody(state,pid);}
+                if (!busy) {refreshGroup(state).catch(error);}
+            } else {expandedEnvironments.delete(group.id);}
             section.open=!section.open;
         });
         content.append(section);
@@ -651,16 +675,16 @@ function syncPipelineLoading(id) {
     const loading = pipelineReads.has(id) || activePipelineActions.has(id);
     for (const state of groupViews.values()) {
         const card = state.rows?.get(id);
-        if (card) setCardBusy(card,'pipeline',loading);
+        if (card) {setCardBusy(card,'pipeline',loading);}
     }
 }
 
 function updatePipelineCards(id) {
     const pipeline = pipelines.find(p => String(p.id) === id);
-    if (!pipeline) return;
+    if (!pipeline) {return;}
     for (const state of groupViews.values()) {
         const index = state.group.pipelines.findIndex(p => String(p.id) === id);
-        if (index < 0) continue;
+        if (index < 0) {continue;}
         state.group.pipelines[index] = pipeline;
         const previous = state.rows?.get(id);
         if (previous?.isConnected) {
@@ -675,17 +699,23 @@ function updatePipelineCards(id) {
             previous.replaceWith(card);
             state.rows.set(id,card);
         }
-        if (!connectionChanged) updateGroupActions(state);
+        if (!connectionChanged) {updateGroupActions(state);}
     }
+}
+
+function waitingApproval(pipeline, group) {
+    const record = executionRecords[String(pipeline.id)];
+    if (!isProduction(group.environment) || !record?.execution?.id || record.historical || record.stale) { return null; }
+    return executionStepStates(record.execution).some(step => step.status === 'WAITING' && step.action === 'approval') ? record.execution.id : null;
 }
 
 function updateGroupActions(state) {
     const {group,buttons} = state;
-    if (!buttons) return;
+    if (!buttons) {return;}
     group.approvals.clear();
     for(const pipeline of group.pipelines){
-        const record=executionRecords[String(pipeline.id)];
-        if(isProduction(group.environment)&&record?.execution?.id&&!record.historical&&!record.stale&&executionStepStates(record.execution).some(step=>step.status==='WAITING'&&step.action==='approval'))group.approvals.set(String(pipeline.id),record.execution.id);
+        const approval = waitingApproval(pipeline, group);
+        if (approval) { group.approvals.set(String(pipeline.id), approval); }
     }
     buttons.start.disabled = busy || backgroundPending || !!state.loading || !group.pipelines.some(p => p.status === 'IDLE' && !pipelineEnvironmentBlocked(p));
     let notice=state.heading.querySelector('.environment-update-notice');
@@ -703,7 +733,8 @@ function updateGroupActions(state) {
     let summaryStatus=state.section.querySelector('.environment-overview-status');
     if(!summaryStatus){summaryStatus=node('span','','pill environment-overview-status');state.section.querySelector('.environment-summary').append(summaryStatus);}
     const waiting=group.pipelines.filter(p=>pipelineStatusLabel(p,executionRecords[String(p.id)]?.execution,isProduction(group.environment))==='Waiting').length;
-    summaryStatus.textContent=blocked?'Blocked':waiting?`${waiting} waiting`:'';summaryStatus.hidden=!summaryStatus.textContent;
+    summaryStatus.textContent = waiting ? `${waiting} waiting` : '';
+    if (blocked) { summaryStatus.textContent = 'Blocked'; }summaryStatus.hidden=!summaryStatus.textContent;
     buttons.stop.disabled = busy || backgroundPending || !!state.loading || !group.pipelines.some(canStopPipeline);
     if (buttons.promote) {
         buttons.promote.disabled = busy || backgroundPending || !!state.loading || !group.pipelines.some(p=>group.approvals.has(String(p.id))&&!pipelineEnvironmentBlocked(p));
@@ -711,26 +742,34 @@ function updateGroupActions(state) {
     }
 }
 
+function removeObsoleteGroupRows(state, ids) {
+    for (const [id,card] of state.rows) {if (!ids.has(id)) {
+        card.remove(); state.rows.delete(id);
+        state.group.approvals.delete(id); state.group.executions.delete(id);
+    }}
+}
+
 function syncGroupRows(state,pid) {
     if(!state.rendered){updateGroupActions(state);return;}
     const ids = new Set(state.group.pipelines.map(p => String(p.id)));
-    for (const [id,card] of state.rows) if (!ids.has(id)) {
-        card.remove(); state.rows.delete(id);
-        state.group.approvals.delete(id); state.group.executions.delete(id);
-    }
+    removeObsoleteGroupRows(state, ids);
     let preceding = null;
     for (const pipeline of state.group.pipelines) {
         const id = String(pipeline.id);
         let card = state.rows.get(id);
         if (!card) { card = renderPipelineCard(state,pid,pipeline); state.rows.set(id,card); }
-        if (preceding ? preceding.nextElementSibling !== card : state.body.firstElementChild !== card) {if(preceding)preceding.after(card);else state.body.prepend(card);}
+        if (preceding ? preceding.nextElementSibling !== card : state.body.firstElementChild !== card) {if(preceding){preceding.after(card);}else {state.body.prepend(card);}}
         preceding = card;
     }
     state.section.querySelector('.environment-summary .muted').textContent = `${state.group.pipelines.length} pipeline${state.group.pipelines.length === 1 ? '' : 's'}`;
 }
 
+function isProductionTarget(id) {
+    return isProduction(environments.find(env => String(env.id) === id));
+}
+
 async function refreshGroup(state, parentSignal) {
-    if (state.loading) return state.loading;
+    if (state.loading) {return state.loading;}
     const generation = viewGeneration, config = connection;
     const signal = AbortSignal.any([historyController.signal,AbortSignal.timeout(45000),...(parentSignal ? [parentSignal] : [])]);
     state.notice.textContent = 'Refreshing pipeline status...';
@@ -738,10 +777,10 @@ async function refreshGroup(state, parentSignal) {
     state.refreshControls = [...state.section.querySelectorAll('.group-heading button, .environment-body button, .environment-body input, .environment-body select')].map(control => [control,control.disabled]);
     state.refreshControls.forEach(([control]) => { control.disabled = true; });
     state.section.setAttribute('aria-busy','true');
-    for(const card of state.rows?.values() || [])setCardBusy(card,'pipeline',true);
+    for(const card of state.rows?.values() || []){setCardBusy(card,'pipeline',true);}
     state.loading = (async () => {
         const environmentStatus = refreshEnvironmentList(signal,config,true).then(async () => {
-            if (state.group.id) await readVariableStatus(state.group.id,signal,config);
+            if (state.group.id) {await readVariableStatus(state.group.id,signal,config);}
             syncEnvironmentIndicators();scheduleEnvironmentPoll();
         });
         const groupPipelinesBefore = state.group.pipelines;
@@ -750,16 +789,16 @@ async function refreshGroup(state, parentSignal) {
             if (!pipelineReads.has(id)) {
                 const pending = (async () => {
                     const fresh = projectPipeline(await request(pathFor(config.programId,`/pipeline/${encodeURIComponent(id)}`),'GET',undefined,{signal}));
-                    const production = environmentIds(fresh).some(id => isProduction(environments.find(env => String(env.id) === id)));
+                    const production = environmentIds(fresh).some(isProductionTarget);
                     const record = await displayedExecution(config.programId,fresh,signal,executionRecords[id],production);
                     signal.throwIfAborted();
-                    if (generation !== viewGeneration) return;
+                    if (generation !== viewGeneration) {return;}
                     const index = pipelines.findIndex(item => String(item.id) === id);
-                    if (index >= 0) pipelines[index] = fresh;
+                    if (index >= 0) {pipelines[index] = fresh;}
                     executionRecords[id] = {...record,execution:projectExecution(record.execution),updatedAt:record.stale ? executionRecords[id]?.updatedAt || 0 : Date.now()};
                     updatePipelineCards(id);
                 })().catch(error => {
-                    if (signal.aborted) throw signal.reason;
+                    if (signal.aborted) {throw signal.reason;}
                     if (generation === viewGeneration) {
                         executionRecords[id] = {...executionRecords[id],error:error.message};
                         updatePipelineCards(id);
@@ -770,13 +809,9 @@ async function refreshGroup(state, parentSignal) {
             }
             return pipelineReads.get(id);
         };
-        // A small pool avoids sequential latency without flooding Adobe.
-        let cursor = 0;
-        await Promise.all([environmentStatus,...Array.from({length:Math.min(4,groupPipelinesBefore.length)},async () => {
-            while (cursor < groupPipelinesBefore.length) await readPipeline(groupPipelinesBefore[cursor++]);
-        })]);
+        await Promise.all([environmentStatus, parallelReads(groupPipelinesBefore, readPipeline)]);
         signal.throwIfAborted();
-        if (generation !== viewGeneration) return;
+        if (generation !== viewGeneration) {return;}
         const updated = groupPipelines(pipelines,environments,environmentOrder).find(group => group.id === state.group.id);
         state.group.pipelines = updated?.pipelines || [];
         syncGroupRows(state,config.programId);
@@ -789,9 +824,9 @@ async function refreshGroup(state, parentSignal) {
             state.notice.textContent = 'Refresh failed. Last known data remains visible.';
             state.body.prepend(node('p',`Environment refresh failed: ${error.message}. Cached data remains visible; collapse and expand to retry.`,'error'));
         }
-        if (parentSignal?.aborted) throw error;
+        if (parentSignal?.aborted) {throw error;}
     }).finally(() => {
-        for(const [id,card] of state.rows || [])setCardBusy(card,'pipeline',pipelineReads.has(id)||activePipelineActions.has(id));
+        for(const [id,card] of state.rows || []){setCardBusy(card,'pipeline',pipelineReads.has(id)||activePipelineActions.has(id));}
         state.refreshControls.forEach(([control,disabled]) => restoreControl(control,disabled));
         state.section.dataset.loading = 'false'; state.section.setAttribute('aria-busy','false'); state.loading = null;
         if (!connectionChanged && generation === viewGeneration) {syncEnvironmentIndicators();scheduleEnvironmentPoll();}
@@ -838,6 +873,100 @@ function renderGroupBody(state,pid,renderRows = true) {
     updateGroupActions(state);
 }
 
+function renderExecutionStep(step, execution, pid, group, p) {
+    const stateCard = node('div','','execution-step');
+    stateCard.append(node('strong',step.action === 'approval' ? 'Approval required' : step.action || step.name || 'Active step'));
+    const stop = stopAction(step);
+    const approval = step.status === 'WAITING' && step.action === 'approval';
+    if (approval && isProduction(group.environment)) {
+        group.approvals.set(String(p.id), execution.id);
+        if (approvalAction(step, true)) {
+            const approve=actionButton('Approve deployment', () => groupAction(pid, group, 'promote', p, execution.id), 'approve');
+            approve.disabled=pipelineEnvironmentBlocked(p);stateCard.append(approve);
+        }
+        if (approvalAction(step, false)) {stateCard.append(actionButton('Reject deployment', () => groupAction(pid, group, 'reject', p, execution.id), 'reject'));}
+    }
+    if (stop && !approval) {stateCard.append(actionButton('Stop', () => groupAction(pid, group, 'stop', p, execution.id), 'stop'));}
+    if (approval && !isProduction(group.environment)) {stateCard.append(node('p', 'Awaiting production approval. Open the Production environment to promote or reject.', 'muted'));}
+    return stateCard;
+}
+
+function appendExecutionSteps(execution, pid, group, p, executionInfo) {
+    for (const step of executionStepStates(execution).filter(st => ['RUNNING', 'WAITING'].includes(st.status))) {
+        executionInfo.append(renderExecutionStep(step, execution, pid, group, p));
+    }
+}
+
+function executionTimestamp(value) {
+    const date = value ? new Date(value) : null;
+    const valid = date && !Number.isNaN(date.getTime());
+    const timestamp = node('p', valid ? `Started: ${date.toLocaleString()} (local time)` : 'Execution date unavailable', 'muted');
+    if (valid) { timestamp.title = value; }
+    return timestamp;
+}
+
+function unavailableExecutionStatus(record) {
+    let label = 'Checking status';
+    if (record?.historyChecked) { label = 'No executions'; }
+    if (record?.error || (!record?.historyChecked && record?.missing)) { label = 'Status unavailable'; }
+    const status = node('span',label,`pill execution-status ${record?.error ? 'unavailable' : 'no-executions'}`);
+    status.title = record?.error || (record?.historyChecked ? 'No pipeline executions found.' : 'Latest execution status is loading.');
+    return status;
+}
+
+function renderExecutionInfo(pid, group, p, metadata) {
+    const executionInfo = node('div', '', 'execution-info');
+    try {
+        const record = executionRecords[String(p.id)];
+        const {execution, historical} = record || {};
+        if (execution?.id) {
+            if (!historical) {group.executions.set(String(p.id), execution.id);}
+            executionInfo.append(executionRibbon(execution,record?.stale));
+            metadata.append(node('p', `${historical ? 'Last execution' : 'Execution'} ${execution.id}`, 'muted execution-reference'));
+            executionInfo.append(executionTimestamp(execution.startedAt || execution.createdAt));
+            if (!historical) { appendExecutionSteps(execution, pid, group, p, executionInfo); }
+        } else {
+            executionInfo.append(unavailableExecutionStatus(record));
+        }
+
+        if (record?.error) {executionInfo.append(node('p', `Execution refresh failed: ${record.error}. Showing cached data.`, 'error'));}
+        if (record?.updatedAt) {metadata.append(node('small', `Execution checked: ${new Date(record.updatedAt).toLocaleString()}`, 'muted execution-checked'));}
+    } catch (e) {
+        executionInfo.append(node('p', `Execution details unavailable: ${e.message}`, 'muted'));
+    }
+    return executionInfo;
+}
+
+async function showLatestExecution(state, p, executionInfo, latest) {
+    const previous = executionRecords[String(p.id)];
+    if (!previous?.missing || state.generation !== viewGeneration) {return;}
+    const record = {execution:projectExecution(latest),historical:true,missing:true,historyChecked:true,updatedAt:Date.now()};
+    executionRecords[String(p.id)] = record;
+    const info = state.rows?.get(String(p.id))?.querySelector('.execution-info') || executionInfo;
+    info.replaceChildren();
+    if (latest) {
+        const status = executionRibbon(latest);
+        info.append(status, executionTimestamp(latest.startedAt || latest.createdAt));
+        const currentCard = info.closest('.pipeline-row');
+        if (currentCard) {
+            currentCard.querySelector(':scope > .line > .pill').hidden = false;
+            const details = currentCard.querySelector('.pipeline-details');
+            details.querySelector('.execution-reference')?.remove();
+            details.querySelector('.execution-checked')?.remove();
+            details.append(node('p',`Last execution ${latest.id}`,'muted execution-reference'),node('small',`Execution checked: ${new Date(record.updatedAt).toLocaleString()}`,'muted execution-checked'));
+        }
+    } else {
+        info.append(node('p','No previous executions found.','muted'));
+        const currentCard = info.closest('.pipeline-row');
+        if (currentCard) {
+            currentCard.querySelector(':scope > .line > .pill').hidden = false;
+            currentCard.querySelector('.execution-reference')?.remove();
+        }
+    }
+    await persistSnapshot(historyController.signal);
+
+}
+
 function renderPipelineCard(state,pid,p) {
     const group = state.group;
     group.approvals.delete(String(p.id));
@@ -861,91 +990,18 @@ function renderPipelineCard(state,pid,p) {
     c.append(typeRow);
     pipelinePill.hidden = false;
     metadata.append(node('p', `Pipeline availability: ${pipelineLabel}`, 'muted'));
-    if (environmentIds(p).length > 1) c.append(node('p', `Shared pipeline · ${targetLabels(p).join(', ')}`, 'muted'));
-    if (p.detailsError) c.append(node('p', `Environment details unavailable: ${p.detailsError}`, 'error'));
+    if (environmentIds(p).length > 1) {c.append(node('p', `Shared pipeline · ${targetLabels(p).join(', ')}`, 'muted'));}
+    if (p.detailsError) {c.append(node('p', `Environment details unavailable: ${p.detailsError}`, 'error'));}
     const actions = node('div', '', 'actions');
     const base = pathFor(pid, `/pipeline/${encodeURIComponent(p.id)}`);
     if (p.status === 'IDLE') {
         const start=actionButton('Start', () => groupAction(pid, group, 'start', p), 'start');
         start.disabled=pipelineEnvironmentBlocked(p);
-        if(start.disabled)start.title='A target environment is updating or unavailable';
+        if(start.disabled){start.title='A target environment is updating or unavailable';}
         actions.append(start);
     }
-    const executionInfo = node('div', '', 'execution-info');
-    try {
-        const record = executionRecords[String(p.id)];
-        const {execution, historical} = record || {};
-        if (execution?.id) {
-            if (!historical) group.executions.set(String(p.id), execution.id);
-            executionInfo.append(executionRibbon(execution,record?.stale));
-            metadata.append(node('p', `${historical ? 'Last execution' : 'Execution'} ${execution.id}`, 'muted execution-reference'));
-            const executedAt = execution.startedAt || execution.createdAt;
-            const executedDate = executedAt ? new Date(executedAt) : null;
-            const timestamp = node('p', executedDate && !Number.isNaN(executedDate.getTime())
-                ? `Started: ${executedDate.toLocaleString()} (local time)` : 'Execution date unavailable', 'muted');
-            if (executedDate && !Number.isNaN(executedDate.getTime())) timestamp.title = executedAt;
-            executionInfo.append(timestamp);
-            for (const step of (historical ? [] : executionStepStates(execution)).filter(st => ['RUNNING', 'WAITING'].includes(st.status))) {
-                const stateCard = node('div','','execution-step');
-                stateCard.append(node('strong',step.action === 'approval' ? 'Approval required' : step.action || step.name || 'Active step'));
-                const stop = stopAction(step);
-                const approval = step.status === 'WAITING' && step.action === 'approval';
-                if (approval && isProduction(group.environment)) {
-                    group.approvals.set(String(p.id), execution.id);
-                    if (approvalAction(step, true)) {
-                        const approve=actionButton('Approve deployment', () => groupAction(pid, group, 'promote', p, execution.id), 'approve');
-                        approve.disabled=pipelineEnvironmentBlocked(p);stateCard.append(approve);
-                    }
-                    if (approvalAction(step, false)) stateCard.append(actionButton('Reject deployment', () => groupAction(pid, group, 'reject', p, execution.id), 'reject'));
-                }
-                if (stop && !approval) stateCard.append(actionButton('Stop', () => groupAction(pid, group, 'stop', p, execution.id), 'stop'));
-                if (approval && !isProduction(group.environment)) stateCard.append(node('p', 'Awaiting production approval. Open the Production environment to promote or reject.', 'muted'));
-                executionInfo.append(stateCard);
-            }
-        } else {
-            const label = record?.error ? 'Status unavailable' : record?.historyChecked ? 'No executions' : record?.missing ? 'Status unavailable' : 'Checking status';
-            const status = node('span',label,`pill execution-status ${record?.error ? 'unavailable' : 'no-executions'}`);
-            status.title = record?.error || (record?.historyChecked ? 'No pipeline executions found.' : 'Latest execution status is loading.');
-            executionInfo.append(status);
-        }
-
-        if (record?.error) executionInfo.append(node('p', `Execution refresh failed: ${record.error}. Showing cached data.`, 'error'));
-        if (record?.updatedAt) metadata.append(node('small', `Execution checked: ${new Date(record.updatedAt).toLocaleString()}`, 'muted execution-checked'));
-    } catch (e) {
-        executionInfo.append(node('p', `Execution details unavailable: ${e.message}`, 'muted'));
-    }
-    c.append(executionInfo, actions, metadata, historyPanel(base + '/executions?start=0&limit=20', historyController.signal, async latest => {
-        const previous = executionRecords[String(p.id)];
-        if (!previous?.missing || state.generation !== viewGeneration) return;
-        const record = {execution:projectExecution(latest),historical:true,missing:true,historyChecked:true,updatedAt:Date.now()};
-        executionRecords[String(p.id)] = record;
-        const info = state.rows?.get(String(p.id))?.querySelector('.execution-info') || executionInfo;
-        info.replaceChildren();
-        if (latest) {
-            const status = executionRibbon(latest);
-            const date = latest.startedAt || latest.createdAt;
-            const parsed = date ? new Date(date) : null;
-            const timestamp = node('p',parsed && !Number.isNaN(parsed.getTime()) ? `Started: ${parsed.toLocaleString()} (local time)` : 'Execution date unavailable','muted');
-            if (parsed && !Number.isNaN(parsed.getTime())) timestamp.title = date;
-            info.append(status,timestamp);
-            const currentCard = info.closest('.pipeline-row');
-            if (currentCard) {
-                currentCard.querySelector(':scope > .line > .pill').hidden = false;
-                const details = currentCard.querySelector('.pipeline-details');
-                details.querySelector('.execution-reference')?.remove();
-                details.querySelector('.execution-checked')?.remove();
-                details.append(node('p',`Last execution ${latest.id}`,'muted execution-reference'),node('small',`Execution checked: ${new Date(record.updatedAt).toLocaleString()}`,'muted execution-checked'));
-            }
-        } else {
-            info.append(node('p','No previous executions found.','muted'));
-            const currentCard = info.closest('.pipeline-row');
-            if (currentCard) {
-                currentCard.querySelector(':scope > .line > .pill').hidden = false;
-                currentCard.querySelector('.execution-reference')?.remove();
-            }
-        }
-        await persistSnapshot(historyController.signal);
-    }, loading => setCardBusy(state.rows?.get(String(p.id)) || c,'history',loading)));
+    const executionInfo = renderExecutionInfo(pid, group, p, metadata);
+    c.append(executionInfo, actions, metadata, historyPanel(base + '/executions?start=0&limit=20', historyController.signal, latest => showLatestExecution(state, p, executionInfo, latest), loading => setCardBusy(state.rows?.get(String(p.id)) || c,'history',loading)));
     setCardBusy(c,'pipeline',pipelineReads.has(String(p.id)) || activePipelineActions.has(String(p.id)));
     if (state.loading) {
         for (const control of c.querySelectorAll('button,input,select')) {
@@ -976,8 +1032,8 @@ function renderEnvironments() {
         const row = node('div', '', 'alias-row');
         row.append(alias, btn('Save alias', () => run(async () => {
             const value = alias.value.trim();
-            if (value) await saveProfilePreference(connection,key,value);
-            else await chrome.storage.local.remove(key);
+            if (value) {await saveProfilePreference(connection,key,value);}
+            else {await chrome.storage.local.remove(key);}
             await updateLocalPreferences();
         })));
         c.append(row, node('small', 'Saved in this browser. Clear the alias and save to restore the original name.', 'muted'));
@@ -990,12 +1046,12 @@ function renderEnvironments() {
             const hidden = visibility.checked;
             const saved = await run(async () => {
                 const next = new Set(hiddenEnvironments);
-                if (hidden) next.add(String(env.id));
-                else next.delete(String(env.id));
+                if (hidden) {next.add(String(env.id));}
+                else {next.delete(String(env.id));}
                 await saveProfilePreference(connection,hiddenEnvironmentsKey(),[...next]);
                 await updateLocalPreferences();
             });
-            if (!saved) visibility.checked = hiddenEnvironments.has(String(env.id));
+            if (!saved) {visibility.checked = hiddenEnvironments.has(String(env.id));}
         });
         visibilityLabel.append(visibility, node('span', 'Hide from Pipelines'));
         c.append(visibilityLabel);
@@ -1018,7 +1074,7 @@ async function renderVariables(pid, signal, loadedVariables) {
     const draftKey=variableDraftKey(snapshotIdentity,selectedEnvironment);
     const draft=await loadVariableDraft(draftKey);
     signal.throwIfAborted();
-    if(draft)variableDrafts.set(draftKey,draft);else variableDrafts.delete(draftKey);
+    if(draft){variableDrafts.set(draftKey,draft);}else {variableDrafts.delete(draftKey);}
     const vars=draft?.original || freshVariables;
     content.replaceChildren();
     const environment=environments.find(env=>String(env.id)===selectedEnvironment);
@@ -1027,7 +1083,7 @@ async function renderVariables(pid, signal, loadedVariables) {
     const notice=node('div','','variable-update-notice');notice.setAttribute('role','status');
     if(updating){notice.append(variableStatusRibbon('updating'),node('p','Variable update in progress. Pipeline starts are blocked. Status refreshes automatically.'));}
     else if(failed){notice.append(variableStatusRibbon('failed'),node('p','Variable update failed. Review the variable statuses and retry your changes.','error'));}
-    if(updating||failed)content.append(notice);
+    if(updating||failed){content.append(notice);}
     const editor = node('section','','variable-editor');
     editor.setAttribute('aria-label','Environment variables');
     const rows = [];
@@ -1047,7 +1103,7 @@ async function renderVariables(pid, signal, loadedVariables) {
     const field = (label, control) => {
         const wrapper=node('label','', 'variable-field');
         if(control.tagName==='SELECT'){const box=node('span','','select-control');box.append(control);wrapper.append(node('span',label),box);}
-        else wrapper.append(node('span',label),control);
+        else {wrapper.append(node('span',label),control);}
         return wrapper;
     };
     const filters=node('div','','variable-filters');
@@ -1066,41 +1122,48 @@ async function renderVariables(pid, signal, loadedVariables) {
         const term=search.value.trim().toLowerCase(),edits=serialize();let visible=0,hiddenPending=0;
         rows.forEach((item,index)=>{
             item.row.hidden=!!item.originalName&&(!`${item.name.value} ${item.service.value}`.toLowerCase().includes(term)||(serviceFilter.value!=='*'&&item.service.value!==serviceFilter.value));
-            if(!item.row.hidden)visible++;else if(changed(edits[index]))hiddenPending++;
+            if(!item.row.hidden){visible++;}else if(changed(edits[index])){hiddenPending++;}
         });
-        resultStatus.textContent=`${visible} of ${rows.length} variables${hiddenPending?` · ${hiddenPending} pending change${hiddenPending===1?'':'s'} hidden by filters`:''}`;
+        const suffix = hiddenPending === 1 ? '' : 's';
+        const hiddenLabel = hiddenPending ? ` · ${hiddenPending} pending change${suffix} hidden by filters` : '';
+        resultStatus.textContent = `${visible} of ${rows.length} variables` + hiddenLabel;
         empty.hidden=visible>0;empty.textContent=rows.length?'No variables match these filters.':'No variables yet. Use Add variable to create one.';
         variableFilters.set(draftKey,{search:search.value,service:serviceFilter.value});
-        if(resizeAll)resize(rows);
+        if(resizeAll){resize(rows);}
     };
     const remember=(persist=true,editedItem=null)=>{
         const edits=serialize(), count=edits.filter(changed).length;
-        draftStatus.textContent=updating?'Update in progress':`${count} unsaved change${count===1?'':'s'}`;
+        draftStatus.textContent = `${count} unsaved change${count===1?'':'s'}`;
+        if (updating) { draftStatus.textContent = 'Update in progress'; }
         draftStatus.title='Drafts survive popup closure until Save or Discard. Chrome restart or extension reload clears drafts.';
-        const discard=editor.querySelector('.variable-discard');if(discard)discard.disabled=updating||!count;
-        const save=editor.querySelector('.action-save');if(save){save.disabled=updating||!count;save.querySelector('span').textContent=count?`Save ${count} change${count===1?'':'s'}`:'Save changes';}
+        const discard=editor.querySelector('.variable-discard');if(discard){discard.disabled=updating||!count;}
+        const save=editor.querySelector('.action-save');if(save){save.disabled=updating||!count;const label = `Save ${count} change${count===1?'':'s'}`;
+            save.querySelector('span').textContent = count ? label : 'Save changes';}
         rows.forEach((item,index)=>{
-            if(editedItem&&item!==editedItem)return;
+            if(editedItem&&item!==editedItem){return;}
             const dirty=changed(edits[index]);
             item.row.classList.toggle('has-changes',dirty);item.row.classList.toggle('marked-for-removal',item.remove.checked);
-            item.status.textContent=item.remove.checked?'Marked for deletion':!item.originalName?'New':dirty?'Modified':'';
+            item.status.textContent = dirty ? 'Modified' : '';
+            if (!item.originalName) { item.status.textContent = 'New'; }
+            if (item.remove.checked) { item.status.textContent = 'Marked for deletion'; }
             item.status.hidden=!item.status.textContent;item.undo.hidden=!dirty;
             item.removeButton.hidden=item.remove.checked;
-            for(const control of item.fields.querySelectorAll('input,textarea,select'))control.disabled=updating||item.remove.checked;
+            for(const control of item.fields.querySelectorAll('input,textarea,select')){control.disabled=updating||item.remove.checked;}
             item.undo.disabled=updating;item.removeButton.disabled=updating;
-            if(item.type.tagName)item.type.disabled=updating;
+            if(item.type.tagName){item.type.disabled=updating;}
         });
-        if(count)variableDrafts.set(draftKey,{original:vars,edits});else variableDrafts.delete(draftKey);
-        if(persist)void saveVariableDraft(draftKey,variableDrafts.get(draftKey)).catch(()=>setMessage('Draft could not be retained. Keep this popup open and retry your edit.',true));
+        if(count){variableDrafts.set(draftKey,{original:vars,edits});}else {variableDrafts.delete(draftKey);}
+        if(persist){void saveVariableDraft(draftKey,variableDrafts.get(draftKey)).catch(()=>setMessage('Draft could not be retained. Keep this popup open and retry your edit.',true));}
         filterRows(false);
         resize(editedItem?[editedItem]:rows);
     };
     const addRow = (variable, saved) => {
         const existing=!!variable,originalName=variable?.name || '',originalService=variable?.service || '';
+        const fieldSuffix = originalName ? ' for ' + originalName : '';
         const row=node('div','','variable-row');row.dataset.originalName=originalName;row.dataset.originalService=originalService;
-        const name=node('input');name.value=saved?.name ?? originalName;name.placeholder='VARIABLE_NAME';name.autocomplete='off';name.setAttribute('aria-label',`Name${originalName?` for ${originalName}`:''}`);
+        const name=node('input');name.value=saved?.name ?? originalName;name.placeholder='VARIABLE_NAME';name.autocomplete='off';name.setAttribute('aria-label','Name' + fieldSuffix);
         const type=existing?{value:variable.type||'string'}:makeSelect('Type',[['string','String'],['secretString','Secret']],saved?.type||'string');
-        const service=makeSelect(`Service${originalName?` for ${originalName}`:''}`,[['','All services'],['author','Author'],['publish','Publish'],['preview','Preview']],saved?.service ?? originalService);
+        const service=makeSelect('Service' + fieldSuffix,[['','All services'],['author','Author'],['publish','Publish'],['preview','Preview']],saved?.service ?? originalService);
         const remove={checked:saved?.remove || false};
         const fields=node('div','','variable-fields');
         const status=node('span','','variable-change-status');
@@ -1111,13 +1174,13 @@ async function renderVariables(pid, signal, loadedVariables) {
         const item={row,name,type,service,originalName,originalService,remove,fields,status};
         const setValue=(text)=>{
             const secret=type.value==='secretString',value=node(secret?'input':'textarea');
-            if(secret){value.type='password';value.maxLength=499;}else value.rows=1;
+            if(secret){value.type='password';value.maxLength=499;}else {value.rows=1;}
             value.value=text;value.placeholder=secret?'Enter a replacement secret':'Variable value';value.autocomplete='off';value.spellcheck=false;
-            value.setAttribute('aria-label',`Value${originalName?` for ${originalName}`:''}`);
+            value.setAttribute('aria-label','Value' + fieldSuffix);
             valueField.replaceChildren(node('span',secret?'Replacement secret':'Value'),value);
             item.value=value;
             row.querySelector('.variable-secret-hint')?.remove();
-            if(secret&&existing)row.append(node('small','Leave blank to keep the existing secret.','variable-secret-hint'));
+            if(secret&&existing){row.append(node('small','Leave blank to keep the existing secret.','variable-secret-hint'));}
         };
         const discardRow=()=>{rows.splice(rows.indexOf(item),1);row.remove();remember();};
         const undo=btn('Undo',()=>{
@@ -1130,24 +1193,24 @@ async function renderVariables(pid, signal, loadedVariables) {
         const removeButton=actionButton(existing?'Remove':'Remove draft',()=>{if(!existing){discardRow();return;}remove.checked=true;remember();},'remove','ghost');
         removeButton.setAttribute('aria-label',existing?`Remove ${originalName}`:'Remove draft');item.removeButton=removeButton;
         top.append(existing?typeLabel:field('Type',type),status);
-        if(variable?.status)top.append(variableStatusRibbon(variable.status));
+        if(variable?.status){top.append(variableStatusRibbon(variable.status));}
         const rowActions=node('div','','variable-row-actions');rowActions.append(undo,removeButton);top.append(rowActions);
         fields.append(field('Name',name),valueField,field('Service',service));row.append(top,fields);
         setValue(saved?.value ?? (existing?baseline(variable).value:''));
-        if(!existing)type.addEventListener('change',()=>{setValue(item.value.value);remember();});
+        if(!existing){type.addEventListener('change',()=>{setValue(item.value.value);remember();});}
         if(existing){rows.push(item);list.append(row);}else{rows.unshift(item);list.prepend(row);}
         row.addEventListener('input',()=>remember(true,item));row.addEventListener('change',()=>remember(true,item));
         if(!existing&&!saved){remember();content.scrollTop=0;name.focus();}
     };
-    if(draft)for(const saved of draft.edits)addRow(vars.find(v=>v.name===saved.originalName&&(v.service||'')===saved.originalService),saved);
-    else vars.forEach(variable=>addRow(variable));
+    if(draft){for(const saved of draft.edits){addRow(vars.find(v=>v.name===saved.originalName&&(v.service||'')===saved.originalService),saved);}}
+    else {vars.forEach(variable=>addRow(variable));}
     const add=actionButton('Add variable',()=>addRow(null),'add');add.disabled=updating;
     search.addEventListener('input',filterRows);serviceFilter.addEventListener('change',filterRows);
     filters.append(field('Search',search),field('Service filter',serviceFilter),add);
     const actions=node('div','','actions variable-actions');
     actions.append(actionButton('Save changes',async()=>{
         try{
-            if(updating)throw new Error('Wait for the current variable update to complete before saving more changes.');
+            if(updating){throw new Error('Wait for the current variable update to complete before saving more changes.');}
             const edits=rows.map(item=>({originalName:item.originalName,originalService:item.originalService,name:item.name.value,value:item.value.value,type:item.type.value,service:item.service.value,remove:item.remove.checked}));
             const patch=buildVariablePatch(vars,edits);
             if(!patch.length){setMessage('No variable changes to save.');return;}
@@ -1156,7 +1219,7 @@ async function renderVariables(pid, signal, loadedVariables) {
             const removals=patch.filter(change=>change.value==='').map(describe);
             const target=environmentLabel(environments.find(env=>String(env.id)===String(selectedEnvironment))||{id:selectedEnvironment});
             const summary=removals.length?`\n\nVariables removed: ${[...new Set(removals)].join(', ')}`:'';
-            if(!confirmAction(`Apply ${patch.length} variable change${patch.length===1?'':'s'} to ${target}?\n\nAffected variables: ${changedNames.join(', ')}${summary}\n\nYou can close the popup; saving continues in the background.`))return;
+            if(!confirmAction(`Apply ${patch.length} variable change${patch.length===1?'':'s'} to ${target}?\n\nAffected variables: ${changedNames.join(', ')}${summary}\n\nYou can close the popup; saving continues in the background.`)){return;}
             await run(async()=>{
                 const mutationSignal=historyController.signal;
                 try{
@@ -1165,22 +1228,22 @@ async function renderVariables(pid, signal, loadedVariables) {
                     variableDrafts.delete(draftKey);
                     Object.assign(environment,{variableUpdateStatus:'updating',variableUpdateObserved:false,variableUpdateStartedAt:Date.now()});
                     const returned=Array.isArray(result)?result:embedded(result,'variables');
-                    if(returned.some(variable=>['creating','updating','deleting'].includes(variable.status)))environment.variableUpdateObserved=true;
+                    if(returned.some(variable=>['creating','updating','deleting'].includes(variable.status))){environment.variableUpdateObserved=true;}
                     await persistSnapshot(mutationSignal);
                 }
                 catch(error){
-                    if(/^500\b/.test(error.message||''))throw new Error(`Cloud Manager returned ${error.message}. Check variable names, service values, unchanged types, the 200-variable limit, and secret values under 500 characters. Environment updates can fail while a pipeline or AEM update is running. Refresh before retrying to see which changes applied.`, {cause: error});
+                    if(/^500\b/.test(error.message||'')){throw new Error(`Cloud Manager returned ${error.message}. Check variable names, service values, unchanged types, the 200-variable limit, and secret values under 500 characters. Environment updates can fail while a pipeline or AEM update is running. Refresh before retrying to see which changes applied.`, {cause: error});}
                     throw error;
                 }
                 setMessage('Variable changes submitted. Environment update in progress; pipeline starts are blocked.');
                 await renderVariables(pid,mutationSignal);
-                if(environment.variableUpdateStatus !== 'updating')setMessage(environment.variableUpdateStatus === 'failed'?'Variable update failed. Review the variable statuses.':'Variable changes saved. Environment is ready.',environment.variableUpdateStatus === 'failed');
+                if(environment.variableUpdateStatus !== 'updating'){setMessage(environment.variableUpdateStatus === 'failed'?'Variable update failed. Review the variable statuses.':'Variable changes saved. Environment is ready.',environment.variableUpdateStatus === 'failed');}
                 scheduleEnvironmentPoll();
                 return false;
             });
         }catch(error){error.message?setMessage(error.message,true):setMessage(String(error),true);}
     },'save','primary'));
-    actions.append(btn('Discard changes',async()=>{if(!variableDrafts.has(draftKey))return;if(!confirmAction('Discard unsaved changes for this environment?'))return;await saveVariableDraft(draftKey);variableDrafts.delete(draftKey);await renderVariables(pid,historyController.signal,freshVariables);},'ghost variable-discard'));
+    actions.append(btn('Discard changes',async()=>{if(!variableDrafts.has(draftKey)){return;}if(!confirmAction('Discard unsaved changes for this environment?')){return;}await saveVariableDraft(draftKey);variableDrafts.delete(draftKey);await renderVariables(pid,historyController.signal,freshVariables);},'ghost variable-discard'));
     const exportButton=btn('Export JSON',()=>{
         const url=URL.createObjectURL(new Blob([JSON.stringify(exportVariables(freshVariables),null,2)],{type:'application/json'}));
         const link=node('a');link.href=url;link.download=`variables-${pid}-${selectedEnvironment}.json`;
@@ -1191,17 +1254,17 @@ async function renderVariables(pid, signal, loadedVariables) {
     const fileInput=node('input');fileInput.type='file';fileInput.accept='.json,application/json';fileInput.hidden=true;fileInput.setAttribute('aria-label','Import variable JSON file');
     const importButton=btn('Import JSON',()=>fileInput.click(),'ghost');importButton.disabled=updating;
     fileInput.addEventListener('change',async()=>{
-        const file=fileInput.files[0];fileInput.value='';if(!file)return;
+        const file=fileInput.files[0];fileInput.value='';if(!file){return;}
         importButton.disabled=true;
         try{
             const text=await file.text();
-            if(signal.aborted || !editor.isConnected || busy || switchingProfile || connectionChanged)return;
+            if(signal.aborted || !editor.isConnected || busy || switchingProfile || connectionChanged){return;}
             const edits=mergeVariableImport(text,vars,serialize());
             list.replaceChildren();rows.length=0;
-            for(const saved of edits)addRow(vars.find(variable=>variable.name===saved.originalName&&(variable.service||'')===saved.originalService),saved);
+            for(const saved of edits){addRow(vars.find(variable=>variable.name===saved.originalName&&(variable.service||'')===saved.originalService),saved);}
             remember();
             setMessage('Imported into draft. Review changes and click Save to apply. New secrets without values must be filled in.');
-        }catch(error){if(editor.isConnected&&!signal.aborted)setMessage(error.message || String(error),true);}
+        }catch(error){if(editor.isConnected&&!signal.aborted){setMessage(error.message || String(error),true);}}
         finally{importButton.disabled=updating;}
     });
     importButton.title='Merge JSON into this draft by name and service. Save is always manual.';
@@ -1219,19 +1282,19 @@ function sizeVariablesView() {
 }
 window.addEventListener('resize',sizeVariablesView);
 
-for (const b of document.querySelectorAll('[data-tab]')) b.addEventListener('click', () => {
-    if (busy && !activeRead) return;
-    if(tab===b.dataset.tab)return;
+for (const b of document.querySelectorAll('[data-tab]')) {b.addEventListener('click', () => {
+    if (busy && !activeRead) {return;}
+    if(tab===b.dataset.tab){return;}
     tab = b.dataset.tab;
     document.body.classList.toggle('variables-view',tab==='variables');
     sizeVariablesView();
-    document.querySelectorAll('[data-tab]').forEach(t => {t.classList.toggle('active',t===b);if(t===b)t.setAttribute('aria-current','page');else t.removeAttribute('aria-current');});
-    navigate();
-});
+    document.querySelectorAll('[data-tab]').forEach(t => {t.classList.toggle('active',t===b);if(t===b){t.setAttribute('aria-current','page');}else {t.removeAttribute('aria-current');}});
+    void navigate();
+});}
 $('environment').addEventListener('change', () => {
-    if (busy && !activeRead) return;
+    if (busy && !activeRead) {return;}
     selectedEnvironment = $('environment').value;
-    navigate();
+    void navigate();
 });
 $('refresh').addEventListener('click', () => navigate(true));
 $('settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
@@ -1245,7 +1308,7 @@ $('programProfile').addEventListener('change',async()=>{
     switchingProfile=true;$('programProfile').disabled=true;
     historyController.abort();environmentPollController?.abort();clearTimeout(environmentPollTimer);
     try{
-        if(activeRead)await activeRead;
+        if(activeRead){await activeRead;}
         $('content').hidden=true;$('content').inert=true;
         $('viewLoaderLabel').textContent='Switching program…';$('viewLoader').hidden=false;
         await profileCommand('selectProfile',{profileId:id});
@@ -1253,60 +1316,66 @@ $('programProfile').addEventListener('change',async()=>{
     }catch(e){$('programProfile').value=connection.profileId || '';error(e);$('content').replaceChildren();}
     finally{switchingProfile=false;$('programProfile').disabled=false;$('viewLoader').hidden=true;$('content').hidden=false;}
 });
+function renderBackgroundActions(jobs) {
+    let panel=$('backgroundActions');
+    if(!panel){panel=node('div','','background-actions');panel.id='backgroundActions';panel.setAttribute('role','status');$('content').before(panel);}
+    panel.replaceChildren();panel.hidden=!jobs.length;
+    for(const job of jobs.slice(0,3)){
+        const labels={running:'In progress · you can close this popup',completed:'Completed',partial:'Completed with skipped or failed pipelines',failed:'Failed · refresh state before retrying',unknown:'Interrupted · result unknown; refresh state before retrying'};
+        panel.append(node('p',`${job.kind==='variables'?'Variable save':'Pipeline action'} · ${labels[job.status]} · ${new Date(job.startedAt).toLocaleTimeString()}`));
+        for(const outcome of job.outcomes || []){panel.append(node('p',`Pipeline ${outcome.id}: ${outcome.message}`,'muted'));}
+    }
+}
+
 async function refreshBackgroundStatus() {
-    if(!usesBackground())return;
+    if(!usesBackground()){return;}
     clearTimeout(backgroundStatusTimer);
     try {
         const response=await chrome.runtime.sendMessage({type:'operationStatus'});
-        if(!response?.ok)throw new Error(response?.error || 'Background status unavailable.');
+        if(!response?.ok){throw new Error(response?.error || 'Background status unavailable.');}
         const previous=backgroundPending;
         backgroundPending=response.data.some(job=>job.status==='running');
         $('programProfile').disabled=backgroundPending || busy || initializingProfiles || switchingProfile;
-        let panel=$('backgroundActions');
-        if(!panel){panel=node('div','','background-actions');panel.id='backgroundActions';panel.setAttribute('role','status');$('content').before(panel);}
-        panel.replaceChildren();panel.hidden=!response.data.length;
-        for(const job of response.data.slice(0,3)){
-            const labels={running:'In progress · you can close this popup',completed:'Completed',partial:'Completed with skipped or failed pipelines',failed:'Failed · refresh state before retrying',unknown:'Interrupted · result unknown; refresh state before retrying'};
-            panel.append(node('p',`${job.kind==='variables'?'Variable save':'Pipeline action'} · ${labels[job.status]} · ${new Date(job.startedAt).toLocaleTimeString()}`));
-            for(const outcome of job.outcomes || [])panel.append(node('p',`Pipeline ${outcome.id}: ${outcome.message}`,'muted'));
-        }
+        renderBackgroundActions(response.data);
         if(backgroundPending){
-            for(const control of $('content').querySelectorAll('.action-start,.action-stop,.action-approve,.action-reject,.action-save'))control.disabled=true;
+            for(const control of $('content').querySelectorAll('.action-start,.action-stop,.action-approve,.action-reject,.action-save')){control.disabled=true;}
             backgroundStatusTimer=setTimeout(()=>void refreshBackgroundStatus(),2000);
         }else if(previous){
             backgroundRefreshNeeded=true;
             if(!busy && !initializingProfiles){backgroundRefreshNeeded=false;await navigate(true);}
         }
-        if(!busy)syncEnvironmentIndicators();
+        if(!busy){syncEnvironmentIndicators();}
     }catch(error){setMessage(`Cannot check background actions: ${error.message}`,true);}
+}
+
+function connectionDidChange(profiles) {
+    connectionChanged=true;
+    clearTimeout(environmentPollTimer);environmentPollController?.abort();
+    historyController.abort();viewGeneration++;
+    setMessage('Program connection changed. Loading selected program…');
+    for(const control of $('content').querySelectorAll('button,input,textarea,select')){control.disabled=true;}
+    if(!initializingProfiles && !switchingProfile && profiles){if(busy && !activeRead){pendingProfileNavigation=true;}else {void navigate();}}
 }
 
 chrome.storage.onChanged?.addListener((changes, area) => {
     if(area==='session' && Object.keys(changes).some(key=>key.startsWith('backgroundJob:'))){void refreshBackgroundStatus();return;}
-    if(area!=='local')return;
+    if(area!=='local'){return;}
     const profiles=changes[PROFILE_KEY];
     if(profiles?.newValue){
         fillProfileSelect($('programProfile'),{profiles:profiles.newValue.profiles,activeProfileId:profiles.newValue.activeProfileId});
         if(profileIdentity(profiles.oldValue)===profileIdentity(profiles.newValue)){
             const selected=profiles.newValue.profiles.find(item=>item.id===profiles.newValue.activeProfileId);
-            if(selected?.id===connection.profileId)$('programLabel').textContent=`${selected.name} · Program ${selected.programId || 'not configured'}`;
+            if(selected?.id===connection.profileId){$('programLabel').textContent=`${selected.name} · Program ${selected.programId || 'not configured'}`;}
             return;
         }
-    }else if(!['clientId','orgId','programId','oauthScopes'].some(key=>key in changes))return;
-    connectionChanged=true;
-    clearTimeout(environmentPollTimer);environmentPollController?.abort();
-    historyController.abort();viewGeneration++;
-    setMessage('Program connection changed. Loading selected program…');
-    for(const control of $('content').querySelectorAll('button,input,textarea,select'))control.disabled=true;
-    if(!initializingProfiles && !switchingProfile && profiles){if(busy && !activeRead)pendingProfileNavigation=true;else void navigate();}
+    }else if(!['clientId','orgId','programId','oauthScopes'].some(key=>key in changes)){return;}
+    connectionDidChange(profiles);
 });
-(async()=>{
-    try{
-        if(chrome.runtime.sendMessage){const state=await profileCommand('listProfiles');fillProfileSelect($('programProfile'),state);}
-        else $('programProfile').closest('.program-switcher').hidden=true;
-        initializingProfiles=false;
-        await refreshBackgroundStatus();
-        await navigate();
-        await refreshBackgroundStatus();
-    }catch(e){initializingProfiles=false;error(e);}
-})();
+try{
+    if(chrome.runtime.sendMessage){const state=await profileCommand('listProfiles');fillProfileSelect($('programProfile'),state);}
+    else {$('programProfile').closest('.program-switcher').hidden=true;}
+    initializingProfiles=false;
+    await refreshBackgroundStatus();
+    await navigate();
+    await refreshBackgroundStatus();
+}catch(e){initializingProfiles=false;error(e);}

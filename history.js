@@ -6,8 +6,8 @@ export function createHistoryPager(path, fetchPage = request) {
     return {
         get done() { return !next; },
         async load() {
-            if (loading || !next) return [];
-            if (visited.has(next)) throw new Error('Repeated history pagination link.');
+            if (loading || !next) {return [];}
+            if (visited.has(next)) {throw new Error('Repeated history pagination link.');}
             loading = true;
             try {
                 const data = await fetchPage(next);
@@ -16,10 +16,10 @@ export function createHistoryPager(path, fetchPage = request) {
                 const pageIds = new Set(fresh.map(row => String(row.id)));
                 const total = data._totalNumberOfItems;
                 const complete = !rows.length || (Number.isInteger(total) && total >= 0 && ids.size + pageIds.size >= total);
-                if (!complete && !fresh.length) throw new Error('History pagination returned no new records.');
+                if (!complete && !fresh.length) {throw new Error('History pagination returned no new records.');}
                 const following = complete ? null : safeAPIPath(link(data, 'next'));
                 const unique = fresh.filter(row => {
-                    if (ids.has(String(row.id))) return false;
+                    if (ids.has(String(row.id))) {return false;}
                     ids.add(String(row.id)); return true;
                 });
                 visited.add(next);
@@ -49,14 +49,14 @@ export function historyPanel(path, signal, onLatest, onLoading) {
     const pager = createHistoryPager(path, next => request(next, 'GET', undefined, {signal}));
     let loading = false, started = false, failed = false, firstPage = true;
     async function load() {
-        if (loading || pager.done || signal.aborted || !panel.isConnected) return;
+        if (loading || pager.done || signal.aborted || !panel.isConnected) {return;}
         loading = true; started = true; failed = false;
         list.setAttribute('aria-busy','true');
         onLoading?.(true);
         more.disabled = true; status.textContent = 'Loading history...';
         try {
             const entries = await pager.load();
-            if (signal.aborted || !panel.isConnected) return;
+            if (signal.aborted || !panel.isConnected) {return;}
             for (const entry of entries) {
                 const row = document.createElement('div');
                 row.className = 'history-entry';
@@ -68,12 +68,13 @@ export function historyPanel(path, signal, onLatest, onLoading) {
                 date.textContent = time ? `Started: ${time}` : 'Start time unavailable';
                 row.append(title, date); rows.append(row);
             }
-            status.textContent = pager.done ? (rows.childElementCount ? 'End of history' : 'No executions found.') : 'Scroll for older executions';
+            status.textContent = 'Scroll for older executions';
+            if (pager.done) { status.textContent = rows.childElementCount ? 'End of history' : 'No executions found.'; }
             more.hidden = pager.done;
             more.textContent = 'Load more';
             if (firstPage) { firstPage = false; await onLatest?.(entries[0] || null); }
         } catch (error) {
-            if (signal.aborted || !panel.isConnected) return;
+            if (signal.aborted || !panel.isConnected) {return;}
             failed = true; status.textContent = `History unavailable: ${error.message}`;
             more.textContent = 'Retry history';
         } finally {
@@ -82,9 +83,9 @@ export function historyPanel(path, signal, onLatest, onLoading) {
             onLoading?.(false);
         }
     }
-    panel.addEventListener('toggle', () => { if (panel.open && !started) load(); });
+    panel.addEventListener('toggle', () => { if (panel.open && !started) {void load();} });
     list.addEventListener('scroll', () => {
-        if (panel.open && !failed && list.scrollTop + list.clientHeight >= list.scrollHeight - 50) load();
+        if (panel.open && !failed && list.scrollTop + list.clientHeight >= list.scrollHeight - 50) {void load();}
     });
     more.addEventListener('click', load);
     return panel;

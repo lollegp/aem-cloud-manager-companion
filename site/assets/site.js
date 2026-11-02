@@ -12,11 +12,13 @@ function selectTab(selected) {
 for (const tab of tabs) {
     tab.addEventListener('click', () => selectTab(tab));
     tab.addEventListener('keydown', event => {
-        if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+        if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) {return;}
         event.preventDefault();
         const index = tabs.indexOf(tab);
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 :
-            (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        const offset = event.key === 'ArrowRight' ? 1 : -1;
+        let next = (index + offset + tabs.length) % tabs.length;
+        if (event.key === 'Home') { next = 0; }
+        else if (event.key === 'End') { next = tabs.length - 1; }
         selectTab(tabs[next]);
         tabs[next].focus();
     });

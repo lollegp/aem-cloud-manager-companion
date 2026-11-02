@@ -1,11 +1,14 @@
 // All traffic is mocked. Exercise async variable updates and the execution guard.
 export default async function usabilitySmoke(page,files) {
     const checks=[],errors=[],calls=[];
-    const check=(ok,message)=>{if(!ok)throw new Error(message);checks.push(message);};
+    const check=(ok,message)=>{if(!ok){throw new Error(message);}checks.push(message);};
     page.on('pageerror',error=>errors.push(error.message));
     await page.route('https://environment-update.test/**',route=>{
         const name=new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html',body:files[name]||''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({contentType,body:files[name]||''});
     });
     await page.goto('https://environment-update.test/reset');
     await page.evaluate(()=>{localStorage.clear();sessionStorage.clear();});
@@ -21,10 +24,10 @@ export default async function usabilitySmoke(page,files) {
     await page.route('https://cloudmanager.adobe.io/**',async route=>{
         const request=route.request(),url=new URL(request.url()),path=url.pathname;calls.push(path);
         const send=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
-        if(path.endsWith('/environments')){if(heldEnvironmentRead)await heldEnvironmentRead;return send({_embedded:{environments}});}
-        if(path.endsWith('/pipelines'))return send({_embedded:{pipelines:[pipeline]}});
+        if(path.endsWith('/environments')){if(heldEnvironmentRead){await heldEnvironmentRead;}return send({_embedded:{environments}});}
+        if(path.endsWith('/pipelines')){return send({_embedded:{pipelines:[pipeline]}});}
         if(path.endsWith('/variables')){
-            const id=path.match(/environment\/(\d+)/)[1];
+            const id=/environment\/(\d+)/.exec(path)[1];
             if(request.method()==='PATCH'){
                 variableWrites++;
                 variables[id]=request.postDataJSON().map(item=>({...item,status:'updating'}));
@@ -32,12 +35,12 @@ export default async function usabilitySmoke(page,files) {
             }
             return failStatus?send({message:'Status unavailable'},503):send({_embedded:{variables:variables[id]}});
         }
-        if(path.endsWith('/pipeline/10'))return send(pipeline);
+        if(path.endsWith('/pipeline/10')){return send(pipeline);}
         if(path.endsWith('/execution')){
             if(request.method()==='PUT'){return send({});}
             return send({message:'No execution'},404);
         }
-        if(path.endsWith('/executions'))return send({_embedded:{executions:[]}});
+        if(path.endsWith('/executions')){return send({_embedded:{executions:[]}});}
         return send({message:`Unexpected request ${path}`},404);
     });
     const ready=()=>page.waitForFunction(()=>!document.querySelector('#refresh').disabled&&!document.querySelector('[data-loading="true"]'));
@@ -53,7 +56,7 @@ export default async function usabilitySmoke(page,files) {
     const downloadReady=page.waitForEvent('download');
     await page.getByRole('button',{name:'Export JSON',exact:true}).click();
     const download=await downloadReady,stream=await download.createReadStream(),chunks=[];
-    for await(const chunk of stream)chunks.push(chunk);
+    for await(const chunk of stream){chunks.push(chunk);}
     const exported=JSON.parse(Buffer.concat(chunks).toString());
     check(exported.variables[0].value==='initial'&&exported.variables.length===1,'download exports saved values despite drafts and filters');
     check(download.suggestedFilename()==='variables-1-1.json','download identifies program and environment');
@@ -117,8 +120,8 @@ export default async function usabilitySmoke(page,files) {
     await page.locator('.variable-row').first().getByRole('button',{name:'Remove draft'}).click();
     await page.getByRole('searchbox',{name:'Search variables'}).fill('');
     for(const width of [600,380]){
-        await page.setViewportSize({width,height:720});
-        check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`inline editor fits ${width}px without horizontal overflow`);
+        await page.setViewportSize({width,height:720}); // NOSONAR: Each assertion must use its own viewport.
+        check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`inline editor fits ${width}px without horizontal overflow`); // NOSONAR: Check the viewport before changing it.
     }
     await page.setViewportSize({width:800,height:900});
     await tab('Pipelines');

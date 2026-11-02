@@ -7,8 +7,8 @@ function fixture(initial = {}, initialSession = {}) {
     let fail = false;
     const area = (data, persistent) => ({
         get: async keys => structuredClone(keys == null ? data : Object.fromEntries(keys.filter(key => key in data).map(key => [key,data[key]]))),
-        set: async values => {if(persistent && fail)throw Error('storage unavailable');Object.assign(data,structuredClone(values));},
-        remove: async keys => {for(const key of Array.isArray(keys)?keys:[keys])delete data[key];},
+        set: async values => {if(persistent && fail){throw Error('storage unavailable');}Object.assign(data,structuredClone(values));},
+        remove: async keys => {for(const key of Array.isArray(keys)?keys:[keys]){delete data[key];}},
         setAccessLevel: async () => {}
     });
     return {local,session,storage:{local:area(local,true),session:area(session,false)},fail: value => {fail=value;}};
@@ -49,7 +49,7 @@ test('switching rejects stale operations even if credentials and program IDs mat
     const f=fixture(config),run=controller(f),first=(await list(run)).activeProfileId;
     await add(run);
     for(const action of ['saveVault','generate','ensureToken','forget','clearToken'])
-        await assert.rejects(run({action,profileId:first,config:bound(first),secret:'secret',consent:true}),/changed|active/i);
+        {await assert.rejects(run({action,profileId:first,config:bound(first),secret:'secret',consent:true}),/changed|active/i);}
 });
 test('new profiles are empty and rename never changes their identity',async()=>{
     const f=fixture(config),run=controller(f);await list(run);const id=await add(run,'Production');

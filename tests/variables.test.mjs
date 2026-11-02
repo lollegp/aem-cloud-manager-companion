@@ -33,7 +33,7 @@ test('rejects invalid and duplicate names, empty additions, and unsafe secrets',
         [{name:'DUP',value:'x',type:'string'},{name:'DUP',value:'y',type:'string'}],
         [{name:'EMPTY',value:'',type:'string'}],
         [{name:'SECRET',value:'s'.repeat(500),type:'secretString'}]
-    ]) assert.throws(()=>buildVariablePatch([],rows));
+    ]) {assert.throws(()=>buildVariablePatch([],rows));}
 });
 test('rejects adding more than Adobe environment variable limit',()=>{
     const rows=Array.from({length:201},(_,index)=>({name:`VAR_${index}`,value:'x',type:'string'}));

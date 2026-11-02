@@ -2,13 +2,16 @@
 // All Adobe responses and Chrome storage are fixtures; no live API is contacted.
 export default async function browserSmoke(page, files) {
     const failures = [], checks = [], writes = [];
-    const assert = (condition, message) => { if (!condition) throw new Error(message); checks.push(message); };
+    const assert = (condition, message) => { if (!condition) {throw new Error(message);} checks.push(message); };
     page.on('pageerror', error => failures.push(error.message));
     await page.setViewportSize({width: 440, height: 760});
     await page.unrouteAll({behavior: 'wait'});
     await page.route('http://companion.test/**', route => {
         const name = new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({status: files[name] || name === 'reset' ? 200 : 404, contentType: name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html', body: files[name] || ''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({status: files[name] || name === 'reset' ? 200 : 404, contentType, body: files[name] || ''});
     });
     await page.goto('http://companion.test/reset');
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
@@ -43,55 +46,61 @@ export default async function browserSmoke(page, files) {
     ].map(p => ({...p, phases: p.id === '14' ? [{type: 'BUILD'}] : [{type: 'DEPLOY', environmentId: '1'}, ...(p.id === '13' ? [{type: 'DEPLOY', environmentId: '2'}] : [])]}));
     let historyRequests = 0, rejectNextApproval = false, executionId = '100', noCurrent = false, emptyHistory = false, failVariableWrite = false;
     const variables = [{name: 'API_URL', value: `https://example.test/${'long-value-'.repeat(24)}`, type: 'string', service: 'publish'}, {name: 'SECRET', type: 'secretString', value: 'masked'}];
-    await page.route('https://cloudmanager.adobe.io/**', async route => {
-        const req = route.request(), url = new URL(req.url()), path = url.pathname;
-        const send = (data, status = 200) => route.fulfill({status, contentType: 'application/json', body: JSON.stringify(data)});
-        if (req.method() !== 'GET') {
-            writes.push({path, method: req.method(), body: req.postDataJSON()});
-            if (path.endsWith('/variables')) {
-                if(failVariableWrite){failVariableWrite=false;return send({message:'System error'},500);}
-                for (const change of req.postDataJSON()) {
-                    const index = variables.findIndex(v => v.name === change.name && (v.service || '') === (change.service || ''));
-                    if (change.value === '') { if (index >= 0) variables.splice(index,1); }
-                    else if (index >= 0) variables[index] = {...variables[index],...change};
-                    else variables.push(change);
-                }
-                variables.forEach(variable=>variable.status='ready');
-                return send({_embedded:{variables:[{status:'updating'}]}});
-            }
-            if (rejectNextApproval && path.includes('/pipeline/21/')) return send({message: 'Approval permission denied'}, 403);
-            const p = pipelines.find(p => path.includes(`/pipeline/${p.id}/`));
-            if (path.endsWith('/execution')) {
-                if (p.id === '11') return send({message: 'Permission denied'}, 403);
-                p.status = 'BUSY';
-            } else if (p) p.status = 'IDLE';
-            return send({});
-        }
-        if (path.endsWith('/environments')) return send({_embedded: {environments: envs}});
-        if (path.endsWith('/pipelines')) return send({_embedded: {pipelines: url.search ? pipelines.slice(2) : pipelines.slice(0, 2)}, _totalNumberOfItems: pipelines.length, _links: {next: {href: `/api/program/1/pipelines?start=${Number(url.searchParams.get('start') || 0) + 2}`}}});
-        if (path.endsWith('/executions')) {
-            historyRequests++;
-            if (noCurrent && path.includes('/pipeline/21/')) return send({_embedded: {executions: emptyHistory ? [] : [{id: 'last-run', status: 'FINISHED', createdAt: '2026-10-21T10:00:00Z', _embedded: {stepStates: [{status: 'WAITING', action: 'approval', _links: {'http://ns.adobe.com/adobecloud/rel/pipeline/advance': {href: '/api/program/1/pipeline/21/execution/old/advance'}}}]}}]}});
-            const start = Number(url.searchParams.get('start') || 0);
-            return send({_totalNumberOfItems: 40, _embedded: {executions: Array.from({length: 20}, (_, i) => ({id: String(start + i), status: 'FINISHED', createdAt: '2026-10-21T10:00:00Z'}))}, _links: {next: {href: path + `?start=${start + 20}&limit=20`}}});
-        }
-        if (path.endsWith('/variables')) return send({_embedded: {variables}});
-        const p = pipelines.find(p => path.includes(`/pipeline/${p.id}`));
-        if (path.endsWith('/execution') || /\/execution\/[^/]+$/.test(path)) {
-            if (path.endsWith('/execution') && noCurrent && p.id === '21') return send({message: 'Pipeline Execution not found'}, 404);
+    const executionResponse = (p, path, send) => {
+            if (path.endsWith('/execution') && noCurrent && p.id === '21') {return send({message: 'Pipeline Execution not found'}, 404);}
             const active = ['BUSY', 'WAITING'].includes(p.status);
             const base = `/api/program/1/pipeline/${p.id}/execution/${executionId}/phase/1/step/1`;
             return send({id: executionId, status: active ? 'RUNNING' : 'FINISHED', _embedded: {stepStates: active ? [{action: p.status === 'WAITING' ? 'approval' : 'build', status: p.status === 'WAITING' ? 'WAITING' : 'RUNNING', _links: {'http://ns.adobe.com/adobecloud/rel/pipeline/cancel': {href: base + '/cancel'}, 'http://ns.adobe.com/adobecloud/rel/pipeline/advance': {href: base + '/advance'}}}] : []}});
+    };
+    const applyPatch = patch => {
+                for (const change of patch) {
+                    const index = variables.findIndex(v => v.name === change.name && (v.service || '') === (change.service || ''));
+                    if (change.value === '') { if (index >= 0) {variables.splice(index,1);} }
+                    else if (index >= 0) {variables[index] = {...variables[index],...change};}
+                    else {variables.push(change);}
+                }
+                variables.forEach(variable=>variable.status='ready');
+
+    };
+    const writeResponse = (req, path, send) => {
+            writes.push({path, method: req.method(), body: req.postDataJSON()});
+            if (path.endsWith('/variables')) {
+                if(failVariableWrite){failVariableWrite=false;return send({message:'System error'},500);}
+                applyPatch(req.postDataJSON());
+                return send({_embedded:{variables:[{status:'updating'}]}});
+            }
+            if (rejectNextApproval && path.includes('/pipeline/21/')) {return send({message: 'Approval permission denied'}, 403);}
+            const p = pipelines.find(p => path.includes(`/pipeline/${p.id}/`));
+            if (path.endsWith('/execution')) {
+                if (p.id === '11') {return send({message: 'Permission denied'}, 403);}
+                p.status = 'BUSY';
+            } else if (p) {p.status = 'IDLE';}
+            return send({});
+    };
+    await page.route('https://cloudmanager.adobe.io/**', async route => {
+        const req = route.request(), url = new URL(req.url()), path = url.pathname;
+        const send = (data, status = 200) => route.fulfill({status, contentType: 'application/json', body: JSON.stringify(data)});
+        if (req.method() !== 'GET') { return writeResponse(req, path, send); }
+        if (path.endsWith('/environments')) {return send({_embedded: {environments: envs}});}
+        if (path.endsWith('/pipelines')) {return send({_embedded: {pipelines: url.search ? pipelines.slice(2) : pipelines.slice(0, 2)}, _totalNumberOfItems: pipelines.length, _links: {next: {href: `/api/program/1/pipelines?start=${Number(url.searchParams.get('start') || 0) + 2}`}}});}
+        if (path.endsWith('/executions')) {
+            historyRequests++;
+            if (noCurrent && path.includes('/pipeline/21/')) {return send({_embedded: {executions: emptyHistory ? [] : [{id: 'last-run', status: 'FINISHED', createdAt: '2026-10-21T10:00:00Z', _embedded: {stepStates: [{status: 'WAITING', action: 'approval', _links: {'http://ns.adobe.com/adobecloud/rel/pipeline/advance': {href: '/api/program/1/pipeline/21/execution/old/advance'}}}]}}]}});}
+            const start = Number(url.searchParams.get('start') || 0);
+            return send({_totalNumberOfItems: 40, _embedded: {executions: Array.from({length: 20}, (_, i) => ({id: String(start + i), status: 'FINISHED', createdAt: '2026-10-21T10:00:00Z'}))}, _links: {next: {href: path + `?start=${start + 20}&limit=20`}}});
         }
+        if (path.endsWith('/variables')) {return send({_embedded: {variables}});}
+        const p = pipelines.find(p => path.includes(`/pipeline/${p.id}`));
+        if (path.endsWith('/execution') || /\/execution\/[^/]+$/.test(path)) { return executionResponse(p, path, send); }
         return p ? send(p) : send({message: 'Unexpected fixture request'}, 404);
     });
     const ready = async () => {
         await page.waitForFunction(() => !document.getElementById('refresh').disabled && !document.querySelector('[data-loading="true"]'));
-        while (await page.locator('.environment-group:not([open]) > .environment-summary').count()) {
-            await page.locator('.environment-group:not([open]) > .environment-summary').first().click();
-            await page.waitForFunction(() => !document.querySelector('[data-loading="true"]'));
+        while (await page.locator('.environment-group:not([open]) > .environment-summary').count()) { // NOSONAR: These steps share mutable browser state and must run in order.
+            await page.locator('.environment-group:not([open]) > .environment-summary').first().click(); // NOSONAR: These steps share mutable browser state and must run in order.
+            await page.waitForFunction(() => !document.querySelector('[data-loading="true"]')); // NOSONAR: These steps share mutable browser state and must run in order.
         }
-        while (await page.locator('.group-heading:not([open]) > summary').count()) await page.locator('.group-heading:not([open]) > summary').first().click();
+        while (await page.locator('.group-heading:not([open]) > summary').count()) {await page.locator('.group-heading:not([open]) > summary').first().click();} // NOSONAR: These steps share mutable browser state and must run in order.
     };
     const tab = async name => { await page.getByRole('button', {name, exact: true}).click(); await ready(); };
     await page.goto('http://companion.test/popup.html');

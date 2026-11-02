@@ -4,7 +4,7 @@ const jobs = await import('../jobs.js').catch(() => ({}));
 const queue = await import('../request-queue.js').catch(() => ({}));
 const storage = () => {
     const data = {};
-    return {data, get:async()=>structuredClone(data),set:async values=>Object.assign(data,structuredClone(values)),remove:async keys=>{for(const key of Array.isArray(keys)?keys:[keys])delete data[key];}};
+    return {data, get:async()=>structuredClone(data),set:async values=>Object.assign(data,structuredClone(values)),remove:async keys=>{for(const key of Array.isArray(keys)?keys:[keys]){delete data[key];}}};
 };
 const tick = () => new Promise(resolve=>setImmediate(resolve));
 test('read queue runs concurrently, limits work, and shares duplicate reads', async () => {

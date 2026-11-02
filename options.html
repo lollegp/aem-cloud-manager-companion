@@ -27,13 +27,13 @@
 </section>
 <fieldset class="credential-consent">
     <legend>Automatic renewal</legend>
-    <p id="vaultStatus" role="status"></p>
-    <p id="migrationNotice" hidden role="status">A previous secret is available in temporary session memory. Select the checkbox below and connect to save it before restarting Chrome.</p>
+    <output id="vaultStatus" data-paragraph></output>
+    <output id="migrationNotice" data-paragraph hidden>A previous secret is available in temporary session memory. Select the checkbox below and connect to save it before restarting Chrome.</output>
     <label class="remember-secret"><input id="rememberSecret" type="checkbox"> Save this credential on this device for automatic renewal.</label>
     <p class="storage-disclosure"><strong>Storage limitation:</strong> the secret is encrypted with a fixed key bundled with this extension. Anyone with the extension code and your saved data can decrypt it. This is obfuscation, not a secure password vault. Only save on a trusted, private Chrome profile. Selecting the checkbox confirms you accept this limitation.</p>
 </fieldset>
 <div class="connection-status"><div class="connect-bar"><button id="connect" class="primary">Connect</button><p id="tokenStatus" class="muted"></p></div>
-<p id="feedback" role="status" aria-live="polite"></p></div>
+<output id="feedback" data-paragraph aria-live="polite"></output></div>
 <p class="muted">Credentials go only to Adobe over HTTPS. Access tokens last for this browser session. Without saving, an entered secret is used once.</p>
 <details class="advanced-settings">
     <summary>Advanced connection controls</summary>
@@ -56,6 +56,6 @@
     <label for="themePreference">Theme</label>
     <div class="select-control"><select id="themePreference" aria-describedby="themeHelp"><option value="system">System (default)</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
     <p id="themeHelp" class="muted">System follows your computer’s light or dark theme. Your choice applies to all extension pages.</p>
-    <p id="themeFeedback" role="status" class="muted"></p>
+    <output id="themeFeedback" data-paragraph class="muted"></output>
 </section>
 </main><script type="module" src="options.js"></script></body></html>

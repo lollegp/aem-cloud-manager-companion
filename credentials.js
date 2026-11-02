@@ -6,7 +6,7 @@ const LEGACY_KEYS = ['unlockedCredential', 'legacyCredential'];
 const sameIdentity = (a, b) => a?.clientId === b?.clientId && a?.orgId === b?.orgId;
 const configFrom = data => Object.fromEntries(CONFIG_KEYS.map(key => [key, String(data?.[key] || '').trim()]));
 function validate(config) {
-    if (!config.clientId || !config.orgId || !config.programId) throw new Error('Enter Client ID, Organization ID, and Program ID.');
+    if (!config.clientId || !config.orgId || !config.programId) {throw new Error('Enter Client ID, Organization ID, and Program ID.');}
 }
 
 // One worker queue serializes saves, token renewals, and deletion. Queued callers
@@ -30,7 +30,7 @@ export function createCredentialController(storage, generate = generateAccessTok
         const config = configFrom(message.config);
         const legacy = session.legacyCredential || (vault?.version === 1 && session.unlockedCredential?.id === vault.id ? session.unlockedCredential : null);
         const savedSecret = async identity => {
-            if (!vault || !sameIdentity(vault, identity)) throw new Error('Enter and save a matching Adobe Client Secret in Settings to enable automatic renewal.');
+            if (!vault || !sameIdentity(vault, identity)) {throw new Error('Enter and save a matching Adobe Client Secret in Settings to enable automatic renewal.');}
             return decryptSecret(vault);
         };
         const storeToken = async result => {
@@ -40,60 +40,63 @@ export function createCredentialController(storage, generate = generateAccessTok
             renewalFailure = undefined;
             return bound;
         };
-        switch (message.action) {
-            case 'status':
-                return {saved: vault?.version === 2, passwordProtected: vault?.version === 1,
-                    clientId: vault?.clientId, orgId: vault?.orgId, migrationPending: !!legacy};
-            case 'saveVault': {
-                if (message.consent !== true) throw new Error('Explicit consent is required to save a secret on this device.');
+        const actions = {
+            'status': async () => {return {saved: vault?.version === 2, passwordProtected: vault?.version === 1,
+                clientId: vault?.clientId, orgId: vault?.orgId, migrationPending: !!legacy};
+            },
+            'saveVault': async () => {
+                if (message.consent !== true) {throw new Error('Explicit consent is required to save a secret on this device.');}
                 validate(config);
-                if (!config.oauthScopes.split(/[\s,]+/).some(Boolean)) throw new Error('Enter the Adobe OAuth scopes before saving credentials for automatic renewal.');
+                if (!config.oauthScopes.split(/[\s,]+/).some(Boolean)) {throw new Error('Enter the Adobe OAuth scopes before saving credentials for automatic renewal.');}
                 const secret = message.secret || (sameIdentity(legacy, config) ? legacy.secret : '');
                 const record = await encryptSecret(secret, config);
-                if (await decryptSecret(record) !== secret) throw new Error('Credential verification failed.');
-                if (!sameIdentity(previous, config) || previous.oauthScopes !== config.oauthScopes) await storage.session.remove(TOKEN_KEYS);
+                if (await decryptSecret(record) !== secret) {throw new Error('Credential verification failed.');}
+                if (!sameIdentity(previous, config) || previous.oauthScopes !== config.oauthScopes) {await storage.session.remove(TOKEN_KEYS);}
                 await storage.local.set({...config, credentialVault: record});
                 await storage.session.remove(LEGACY_KEYS);
                 renewalFailure = undefined;
                 return {};
-            }
-            case 'forget':
-                await storage.session.remove([...LEGACY_KEYS, ...TOKEN_KEYS]);
+
+            },
+            'forget': async () => {await storage.session.remove([...LEGACY_KEYS, ...TOKEN_KEYS]);
                 await storage.local.remove(['credentialVault', 'rememberedSecret', 'rememberSecret']);
                 renewalFailure = undefined;
                 return {};
-            case 'clearToken':
-                await storage.session.remove(TOKEN_KEYS);
+            },
+            'clearToken': async () => {await storage.session.remove(TOKEN_KEYS);
                 renewalFailure = undefined;
                 return {};
-            case 'saveManual': {
+            },
+            'saveManual': async () => {
                 validate(config);
                 const token = String(message.token || '').trim();
-                if (!token) throw new Error('Paste an access token, or use Generate access token.');
-                if (session.token === token && (previous.clientId !== config.clientId || (session.tokenClientId && session.tokenClientId !== config.clientId))) throw new Error('Client ID changed. Paste a token for this client or generate a new token.');
-                if (session.token === token && (previous.orgId !== config.orgId || (session.tokenOrgId && session.tokenOrgId !== config.orgId))) throw new Error('Organization ID changed. Paste a token for this organization or generate a new token.');
-                if (!sameIdentity(previous, config)) await storage.session.remove(TOKEN_KEYS);
+                if (!token) {throw new Error('Paste an access token, or use Generate access token.');}
+                if (session.token === token && (previous.clientId !== config.clientId || (session.tokenClientId && session.tokenClientId !== config.clientId))) {throw new Error('Client ID changed. Paste a token for this client or generate a new token.');}
+                if (session.token === token && (previous.orgId !== config.orgId || (session.tokenOrgId && session.tokenOrgId !== config.orgId))) {throw new Error('Organization ID changed. Paste a token for this organization or generate a new token.');}
+                if (!sameIdentity(previous, config)) {await storage.session.remove(TOKEN_KEYS);}
                 await storage.local.set(config);
                 await storeToken({token, tokenExpiresAt: session.token === token ? session.tokenExpiresAt : 0});
                 return {};
-            }
-            case 'generate': {
+
+            },
+            'generate': async () => {
                 validate(config);
                 const secret = message.secret || await savedSecret(config);
                 const result = await generate(config.clientId, secret, config.oauthScopes);
-                if (!sameIdentity(previous, config)) await storage.session.remove(TOKEN_KEYS);
+                if (!sameIdentity(previous, config)) {await storage.session.remove(TOKEN_KEYS);}
                 await storage.local.set(config);
                 await storeToken(result);
                 return {};
-            }
-            case 'ensureToken': {
+
+            },
+            'ensureToken': async () => {
                 validate(config);
-                if (CONFIG_KEYS.some(key => config[key] !== previous[key])) throw new Error('Connection changed. Refresh the extension and try again.');
+                if (CONFIG_KEYS.some(key => config[key] !== previous[key])) {throw new Error('Connection changed. Refresh the extension and try again.');}
                 const fresh = session.token && (!session.tokenExpiresAt || Date.now() < session.tokenExpiresAt - 30000);
                 const matches = (!session.tokenClientId || session.tokenClientId === config.clientId) && (!session.tokenOrgId || session.tokenOrgId === config.orgId);
-                if (fresh && matches && session.token !== message.rejectedToken) return Object.fromEntries(TOKEN_KEYS.map(key => [key, session[key]]));
+                if (fresh && matches && session.token !== message.rejectedToken) {return Object.fromEntries(TOKEN_KEYS.map(key => [key, session[key]]));}
                 const failureKey = JSON.stringify([config, vault?.id]);
-                if (renewalFailure?.key === failureKey && Date.now() < renewalFailure.until) throw new Error(renewalFailure.message);
+                if (renewalFailure?.key === failureKey && Date.now() < renewalFailure.until) {throw new Error(renewalFailure.message);}
                 try {
                     const secret = await savedSecret(config);
                     return await storeToken(await generate(config.clientId, secret, config.oauthScopes));
@@ -101,9 +104,11 @@ export function createCredentialController(storage, generate = generateAccessTok
                     renewalFailure = {key: failureKey, until: Date.now() + 30000, message: error.message};
                     throw error;
                 }
+
             }
-            default: throw new Error('Unknown credential operation.');
-        }
+        };
+        if (!Object.hasOwn(actions, message.action)) { throw new Error('Unknown credential operation.'); }
+        return actions[message.action]();
     }
     return message => {
         const result = queue.then(() => handle(message));

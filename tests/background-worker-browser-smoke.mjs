@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 export default async function backgroundWorkerSmoke(context) {
  await context.setOffline(true);
- const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');const waitWorker=async predicate=>{for(let i=0;i<200;i++){if(await worker.evaluate(predicate))return;await new Promise(resolve=>setTimeout(resolve,50));}throw Error('Worker condition timed out: '+predicate);};const origin=worker.url().replace(/\/background\.js$/,'');
+ const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');const waitWorker=async predicate=>{for(let i=0;i<200;i++){if(await worker.evaluate(predicate)){return;}await new Promise(resolve=>setTimeout(resolve,50));}throw new Error('Worker condition timed out: '+predicate);};const origin=worker.url().replace(/\/background\.js$/,''); // NOSONAR: These steps share mutable browser state and must run in order.
  await worker.evaluate(()=>{
   globalThis.fixture={reads:[],writes:[],completedWrites:0,active:0,max:0,gate:false,releases:[],pipelineGate:false};
   const pipelines=['1','2'].map(id=>({id,name:'Pipeline '+id,status:'BUSY',type:'CI_CD',phases:[{type:'DEPLOY',environmentId:'prod'}]}));
@@ -17,22 +17,22 @@ export default async function backgroundWorkerSmoke(context) {
      return new globalThis.Response(JSON.stringify(p.endsWith('/variables')?[{name:'PRIVATE',value:'never-store-this'}]:{}),{status:200});
     }
     f.reads.push(p);
-    if((f.gate&&p.endsWith('/variables'))||(f.pipelineGate&&/\/pipeline\/[12]$/.test(p)))await new Promise(resolve=>f.releases.push(resolve));
+    if((f.gate&&p.endsWith('/variables'))||(f.pipelineGate&&/\/pipeline\/[12]$/.test(p))){await new Promise(resolve=>f.releases.push(resolve));}
     await new Promise(resolve=>setTimeout(resolve,40));
     let data={};
-    if(p.endsWith('/environments'))data={_embedded:{environments:[{id:'prod',name:'Production',type:'prod',status:'ready'}]}};
-    else if(p.endsWith('/pipelines'))data={_embedded:{pipelines}};
-    else if(p.endsWith('/variables'))data={_embedded:{variables:[{name:'MODE',value:'old',type:'string',status:'ready'}]}};
-    else if(/\/pipeline\/[12]$/.test(p))data=pipelines.find(item=>p.endsWith('/'+item.id));
+    if(p.endsWith('/environments')){data={_embedded:{environments:[{id:'prod',name:'Production',type:'prod',status:'ready'}]}};}
+    else if(p.endsWith('/pipelines')){data={_embedded:{pipelines}};}
+    else if(p.endsWith('/variables')){data={_embedded:{variables:[{name:'MODE',value:'old',type:'string',status:'ready'}]}};}
+    else if(/\/pipeline\/[12]$/.test(p)){data=pipelines.find(item=>p.endsWith('/'+item.id));}
     else if(p.endsWith('/execution')||p.endsWith('/execution/run')){const id=p.split('/pipeline/')[1].split('/')[0];data={id:'run',status:'WAITING',_embedded:{stepStates:[{action:'approval',status:'WAITING',_links:{'http://ns.adobe.com/adobecloud/rel/pipeline/cancel':{href:`/api/program/1/pipeline/${id}/execution/run/cancel`}}}]}};}
-    else if(p.endsWith('/executions'))data={_embedded:{executions:[]}};
+    else if(p.endsWith('/executions')){data={_embedded:{executions:[]}};}
     return new globalThis.Response(JSON.stringify(data),{status:200});
    }finally{f.active--;}
   };
  });
  const settings=await context.newPage();await settings.goto(origin+'/options.html');await settings.waitForFunction(()=>!document.querySelector('#connect').disabled);
  await settings.evaluate(async()=>{
-  const call=async(action,extra={})=>{const r=await chrome.runtime.sendMessage({type:'credentials',action,...extra});if(!r.ok)throw Error(r.error);return r.data;};
+  const call=async(action,extra={})=>{const r=await chrome.runtime.sendMessage({type:'credentials',action,...extra});if(!r.ok){throw new Error(r.error);}return r.data;};
   const profileId=(await call('listProfiles')).activeProfileId;
   await call('saveManual',{profileId,config:{profileId,clientId:'fixture',orgId:'org',programId:'1',oauthScopes:''},token:'fixture-token'});
  });

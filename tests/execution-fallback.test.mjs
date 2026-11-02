@@ -4,12 +4,12 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {embedded, pathFor} from '../api.js';
 const source = await readFile(new URL('../popup.js', import.meta.url), 'utf8');
-const start = source.indexOf('async function displayedExecution(');
+const start = source.indexOf('async function readLatestExecution(');
 const end = source.indexOf('function targetLabels(', start);
 function fixture(current, history) {
     const calls = [];
     assert.ok(start >= 0, 'display fallback helper exists');
-    const fn = vm.runInNewContext(`(${source.slice(start, end).trim()})`, {
+    const fn = vm.runInNewContext(`${source.slice(start, end)}\ndisplayedExecution`, {
         currentExecution: current, pathFor, embedded,
         request: async (...args) => { calls.push(args); return typeof history === 'function' ? history() : history; }
     });

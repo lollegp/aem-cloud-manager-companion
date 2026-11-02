@@ -5,7 +5,9 @@ const $ = id => document.getElementById(id);
 let working = false, currentProfileId = '', settingsDirty = false, profileReloadNeeded = false, profileReady = false;
 const feedback = (msg, good = false) => {
     $('feedback').textContent = msg;
-    $('feedback').className = good===null ? 'muted' : good ? 'success' : 'error';
+    let className = 'muted';
+    if (good !== null) { className = good ? 'success' : 'error'; }
+    $('feedback').className = className;
     $('feedback').setAttribute('role',good===false?'alert':'status');
 };
 
@@ -16,20 +18,26 @@ function values() {
 function validate(config) {
     const missing=['clientId','orgId','programId'].filter(key=>!config[key]);
     missing.forEach(key=>$(key).setAttribute('aria-invalid','true'));
-    if(missing.length)throw new Error('Enter Client ID, Organization ID, and Program ID.');
+    if(missing.length){throw new Error('Enter Client ID, Organization ID, and Program ID.');}
 }
 
 async function showToken() {
     const s = await settings();
-    if((s.profileId || '')!==currentProfileId)return;
+    if((s.profileId || '')!==currentProfileId){return;}
     $('token').value = s.token || '';
-    $('tokenStatus').textContent = !s.token ? 'No token saved.' : s.tokenExpiresAt
-        ? `${Date.now() >= s.tokenExpiresAt - 30000 ? 'Expired' : 'Expires'}: ${new Date(s.tokenExpiresAt).toLocaleString()}.`
-        : 'Manual token saved. Expiry is managed by Adobe.';
+    let status = 'No token saved.';
+    if (s.token) {
+        status = 'Manual token saved. Expiry is managed by Adobe.';
+        if (s.tokenExpiresAt) {
+            const label = Date.now() >= s.tokenExpiresAt - 30000 ? 'Expired' : 'Expires';
+            status = `${label}: ${new Date(s.tokenExpiresAt).toLocaleString()}.`;
+        }
+    }
+    $('tokenStatus').textContent = status;
 }
 
 async function perform(action) {
-    if (working) return;
+    if (working) {return;}
     working = true;
     document.querySelectorAll('[aria-invalid="true"]').forEach(input=>input.removeAttribute('aria-invalid'));
     const controls = [...document.querySelectorAll('button, input:not([readonly]), select:not(#themePreference)')];
@@ -50,21 +58,24 @@ async function credential(action, extra = {}) {
 
 async function showVault() {
     const state = await credential('status');
-    $('vaultStatus').textContent = state.saved
-        ? `Secret saved. Automatic token renewal is available after restart. Client: ${state.clientId}; organization: ${state.orgId}.`
-        : state.passwordProtected ? 'Previous password-protected record retained. Re-enter your Adobe Client Secret and save it to enable passwordless renewal.'
-        : 'No secret saved. Automatic renewal requires a saved secret.';
+    let status = 'No secret saved. Automatic renewal requires a saved secret.';
+    if (state.saved) {
+        status = `Secret saved. Automatic token renewal is available after restart. Client: ${state.clientId}; organization: ${state.orgId}.`;
+    } else if (state.passwordProtected) {
+        status = 'Previous password-protected record retained. Re-enter your Adobe Client Secret and save it to enable passwordless renewal.';
+    }
+    $('vaultStatus').textContent = status;
     $('migrationNotice').hidden = !state.migrationPending;
 }
 
 function clearSensitiveInputs() { $('clientSecret').value = ''; }
 
 function syncProfileControls() {
-    for(const id of ['connect','saveVault','forgetSecret','generate','save','clear','test','renameProfile','deleteProfile','profileName','clientId','orgId','programId','clientSecret','oauthScopes','token','rememberSecret'])$(id).disabled=working || !currentProfileId || !profileReady;
+    for(const id of ['connect','saveVault','forgetSecret','generate','save','clear','test','renameProfile','deleteProfile','profileName','clientId','orgId','programId','clientSecret','oauthScopes','token','rememberSecret']){$(id).disabled=working || !currentProfileId || !profileReady;}
 }
 async function loadProfile() {
     profileReady=false;
-    for(const key of ['clientId','orgId','programId','oauthScopes','token','profileName'])$(key).value='';
+    for(const key of ['clientId','orgId','programId','oauthScopes','token','profileName']){$(key).value='';}
     clearSensitiveInputs();$('rememberSecret').checked=false;
     $('vaultStatus').textContent='Loading program connection…';$('tokenStatus').textContent='';
     const state=await profileCommand('listProfiles');
@@ -74,8 +85,8 @@ async function loadProfile() {
     const profile=state.profiles.find(item=>item.id===currentProfileId);
     $('profileName').value=profile?.name || '';
     const s=await settings();
-    if((s.profileId || '')!==currentProfileId)throw new Error('Program changed while loading. Select the program again.');
-    for(const key of ['clientId','orgId','programId','oauthScopes'])$(key).value=s[key] || '';
+    if((s.profileId || '')!==currentProfileId){throw new Error('Program changed while loading. Select the program again.');}
+    for(const key of ['clientId','orgId','programId','oauthScopes']){$(key).value=s[key] || '';}
     if(currentProfileId){await showVault();await showToken();}
     else {$('vaultStatus').textContent='Add a program to configure its connection.';$('tokenStatus').textContent='No program selected.';$('migrationNotice').hidden=true;}
     settingsDirty=false;profileReady=true;
@@ -89,20 +100,20 @@ $('programProfile').addEventListener('change',()=>{
     void perform(async()=>{try{await profileCommand('selectProfile',{profileId:id});await loadProfile();feedback('Program selected.',true);}finally{$('programProfile').value=currentProfileId;}});
 });
 $('addProfile').addEventListener('click',()=>{
-    if(!allowProfileChange())return;
+    if(!allowProfileChange()){return;}
     void perform(async()=>{await profileCommand('addProfile',{name:'New program'});await loadProfile();feedback('Enter credentials for this program, then Connect.',true);$('profileName').focus();});
 });
 $('renameProfile').addEventListener('click',()=>perform(async()=>{
     const state=await credential('renameProfile',{name:$('profileName').value});fillProfileSelect($('programProfile'),state);feedback('Program renamed.',true);
 }));
 $('deleteProfile').addEventListener('click',()=>perform(async()=>{
-    if(!confirm('Delete this program profile, its saved credential, session token and local preferences? Adobe resources will not be changed.'))return;
+    if(!confirm('Delete this program profile, its saved credential, session token and local preferences? Adobe resources will not be changed.')){return;}
     await credential('deleteProfile');await loadProfile();feedback('Program profile deleted.',true);
 }));
-for(const input of document.querySelectorAll('.connection-fields input, #token, #rememberSecret'))input.addEventListener('input',()=>{settingsDirty=true;input.removeAttribute('aria-invalid');});
-perform(loadProfile);
+for(const input of document.querySelectorAll('.connection-fields input, #token, #rememberSecret')){input.addEventListener('input',()=>{settingsDirty=true;input.removeAttribute('aria-invalid');});}
+await perform(loadProfile);
 
-for (const key of ['clientId', 'orgId']) $(key).addEventListener('input', clearSensitiveInputs);
+for (const key of ['clientId', 'orgId']) {$(key).addEventListener('input', clearSensitiveInputs);}
 
 // Capture the entered secret before storage events clear sensitive inputs.
 $('connect').addEventListener('click', () => perform(async () => {
@@ -143,7 +154,7 @@ $('saveVault').addEventListener('click', () => perform(async () => {
 }));
 
 $('forgetSecret').addEventListener('click', () => perform(async () => {
-    if (!confirm('Delete the saved secret and clear the access token? Automatic renewal will stop until you save credentials again.')) return;
+    if (!confirm('Delete the saved secret and clear the access token? Automatic renewal will stop until you save credentials again.')) {return;}
     await credential('forget');
     clearSensitiveInputs();
     $('rememberSecret').checked = false;
@@ -173,20 +184,20 @@ chrome.storage.onChanged.addListener((changes, area) => {
         const changed=state?.activeProfileId!==currentProfileId || ['clientId','orgId','programId','oauthScopes'].some(key=>profile?.[key]!==before?.[key]);
         if(!changed){
             fillProfileSelect($('programProfile'),{profiles:state?.profiles || [],activeProfileId:state?.activeProfileId || ''});
-            if(!working && currentProfileId)showVault().catch(()=>feedback('Could not refresh credential status. Reload Settings.'));
+            if(!working && currentProfileId){showVault().catch(()=>feedback('Could not refresh credential status. Reload Settings.'));}
             return;
         }
-        if(working){if(state?.activeProfileId!==currentProfileId)profileReloadNeeded=true;return;}
+        if(working){if(state?.activeProfileId!==currentProfileId){profileReloadNeeded=true;}return;}
         clearSensitiveInputs();$('token').value='';
         void perform(async()=>{await loadProfile();feedback('Program connection changed in another extension page. Fields refreshed.',null);});
     }
-    if(area==='session' && changes[profileSessionKey(currentProfileId)] && !working)showToken().catch(()=>feedback('Could not refresh token status. Reload Settings.'));
+    if(area==='session' && changes[profileSessionKey(currentProfileId)] && !working){showToken().catch(()=>feedback('Could not refresh token status. Reload Settings.'));}
 });
 
 $('save').addEventListener('click', () => perform(async () => {
     const config = values(), token = $('token').value.trim();
     validate(config);
-    if (!token) throw new Error('Paste an access token, or use Generate access token.');
+    if (!token) {throw new Error('Paste an access token, or use Generate access token.');}
     await credential('saveManual', {config, token});
     await showToken();
     settingsDirty=false;
@@ -203,7 +214,7 @@ $('clear').addEventListener('click', () => perform(async () => {
 $('test').addEventListener('click', () => perform(async () => {
     const config = values(), saved = await settings();
     validate(config);
-    if (['profileId', 'clientId', 'orgId', 'programId'].some(key => config[key] !== saved[key])) throw new Error('Save the connection or generate a token before testing changed settings.');
+    if (['profileId', 'clientId', 'orgId', 'programId'].some(key => config[key] !== saved[key])) {throw new Error('Save the connection or generate a token before testing changed settings.');}
     feedback('Testing Cloud Manager access...',null);
     try { await request(pathFor(saved.programId, '/environments'),'GET',undefined,{expectedConfig:saved}); }
     catch (e) { throw new Error(`Cloud Manager connection failed: ${e.message} Check the client scopes and your program permissions.`, {cause: e}); }

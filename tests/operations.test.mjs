@@ -8,10 +8,10 @@ function fixture({changed=false}={}) {
     const request=async(path,method='GET')=>{
         reads.push(path);
         if(method==='PUT'){puts.push(path);return {};}
-        if(path.endsWith('/environments'))return {_embedded:{environments:[{id:'prod',type:'prod',status:'ready'}]}};
+        if(path.endsWith('/environments')){return {_embedded:{environments:[{id:'prod',type:'prod',status:'ready'}]}};}
         const id=path.split('/pipeline/')[1]?.split('/')[0];
-        if(path.endsWith('/execution'))return {id:'run'};
-        if(path.endsWith('/execution/run'))return {id:changed?'changed':'run',_embedded:{stepStates:[{status:'WAITING',action:'approval',_links:{'http://ns.adobe.com/adobecloud/rel/pipeline/cancel':{href:`/api/program/1/pipeline/${id}/execution/run/cancel`}}}]}};
+        if(path.endsWith('/execution')){return {id:'run'};}
+        if(path.endsWith('/execution/run')){return {id:changed?'changed':'run',_embedded:{stepStates:[{status:'WAITING',action:'approval',_links:{'http://ns.adobe.com/adobecloud/rel/pipeline/cancel':{href:`/api/program/1/pipeline/${id}/execution/run/cancel`}}}]}};}
         return pipeline(id);
     };
     return {request,puts,reads};
@@ -35,7 +35,7 @@ test('preflight stops at declared total despite a stale next link',async()=>{
     const f=fixture();let pages=0;
     const send=async(path,...args)=>{
         if(path.endsWith('/environments')){pages++;return {_totalNumberOfItems:1,_embedded:{environments:[{id:'prod',type:'prod',status:'ready'}]},_links:{next:{href:'/api/program/1/environments?start=1'}}};}
-        if(path.includes('?start='))throw Error('must not fetch stale next page');
+        if(path.includes('?start=')){throw Error('must not fetch stale next page');}
         return f.request(path,...args);
     };
     await operations.executeOperation(job,send);assert.equal(pages,1);assert.equal(f.puts.length,2);

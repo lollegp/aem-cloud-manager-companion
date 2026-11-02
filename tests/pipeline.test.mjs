@@ -41,12 +41,12 @@ for (const [action, status, body, suffix] of [
     ['schedule', 'WAITING', {cancel: true}, 'cancel'],
     ['managed', 'WAITING', {start: false}, 'cancel'],
     ['deploy', 'WAITING', {resume: false}, 'advance']
-]) test(`stop payload for ${status} ${action}`, () => {
+]) {test(`stop payload for ${status} ${action}`, () => {
     assert.equal(typeof model.stopAction, 'function');
     const result = model.stopAction(step(action, status));
     assert.deepEqual(result.body, body);
     assert.ok(result.path.endsWith('/' + suffix));
-});
+});}
 test('only active, advertised, trusted step actions can be stopped', () => {
     assert.equal(typeof model.stopAction, 'function');
     assert.equal(model.stopAction({action: 'build', status: 'RUNNING'}), null);
@@ -58,7 +58,7 @@ test('batch deduplicates pipelines, continues after failure and reports each out
     const calls = [];
     const results = await model.runPipelineBatch([{id: 1}, {id: '1'}, {id: 2}, {id: 3}], async p => {
         calls.push(p.id);
-        if (p.id === 2) throw new Error('Denied');
+        if (p.id === 2) {throw new Error('Denied');}
         return p.id === 3 ? 'Skipped: already running' : 'Started';
     });
     assert.deepEqual(calls, [1, 2, 3]);
@@ -110,7 +110,7 @@ test('custom environment order precedes new environments and keeps unassigned gr
 
 test('execution pill labels distinguish actual run outcomes from pipeline idle/busy states', () => {
     const labels = {FINISHED:'Success',ERROR:'Failed',FAILED:'Failed',RUNNING:'Running',CANCELLED:'Cancelled',CANCELLING:'Cancelling',NOT_STARTED:'Pending',WAITING:'Waiting'};
-    for (const [status,label] of Object.entries(labels)) assert.equal(model.executionStatusLabel({status}),label);
+    for (const [status,label] of Object.entries(labels)) {assert.equal(model.executionStatusLabel({status}),label);}
     assert.equal(model.executionStatusLabel({status:'IDLE'}),'Unknown');
     assert.equal(model.executionStatusLabel({status:'BUSY'}),'Unknown');
 });

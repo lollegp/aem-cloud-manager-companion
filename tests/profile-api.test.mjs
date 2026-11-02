@@ -52,7 +52,7 @@ test('post-mutation reads do not join a pre-mutation in-flight response',async()
     let release,started,reads=0;
     const began=new Promise(resolve=>{started=resolve;});
     globalThis.fetch=async(_url,options)=>{
-        if(options.method==='PUT')return new globalThis.Response('{}',{status:200});
+        if(options.method==='PUT'){return new globalThis.Response('{}',{status:200});}
         const version=++reads;
         if(version===1){started();await new Promise(resolve=>{release=resolve;});}
         return new globalThis.Response(JSON.stringify({version}),{status:200});

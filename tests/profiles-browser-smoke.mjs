@@ -1,11 +1,14 @@
 // Uses real browser Web Crypto, the actual worker handler, and mock Chrome/Adobe APIs.
 export default async function profileBrowserSmoke(page, files) {
     const checks = [], errors = [];
-    const check = (ok, name) => { if (!ok) throw new Error(name); checks.push(name); };
+    const check = (ok, name) => { if (!ok) {throw new Error(name);} checks.push(name); };
     page.on('pageerror', error => errors.push(error.message));
     await page.route('https://auth-companion.test/**', route => {
         const name = new URL(route.request().url()).pathname.slice(1);
-        return route.fulfill({headers: name.endsWith('.html') && files['manifest.json'] ? {'Content-Security-Policy': JSON.parse(files['manifest.json']).content_security_policy.extension_pages} : {}, contentType: name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html', body: files[name] || ''});
+        let contentType = 'text/html';
+        if (name.endsWith('.js')) { contentType = 'text/javascript'; }
+        else if (name.endsWith('.css')) { contentType = 'text/css'; }
+        return route.fulfill({headers: name.endsWith('.html') && files['manifest.json'] ? {'Content-Security-Policy': JSON.parse(files['manifest.json']).content_security_policy.extension_pages} : {}, contentType, body: files[name] || ''});
     });
     await page.addInitScript(() => {
         const local = JSON.parse(localStorage.getItem('fixtureLocal') || 'null') || {
@@ -18,14 +21,14 @@ export default async function profileBrowserSmoke(page, files) {
         window.fixtureProfileSession = () => session[`profileSession:${local.connectionProfiles.activeProfileId}`] || {};
         window.fixtureStorageWrites = []; window.fixtureAccess = [];
         const persist = () => { localStorage.setItem('fixtureLocal', JSON.stringify(local)); sessionStorage.setItem('fixtureSession', JSON.stringify(session)); };
-        const emit = (changes, name) => { if (Object.keys(changes).length) queueMicrotask(() => listeners.forEach(fn => fn(changes, name))); };
+        const emit = (changes, name) => { if (Object.keys(changes).length) {queueMicrotask(() => listeners.forEach(fn => fn(changes, name)));} };
         const storage = (data, name) => ({
             get: async keys => structuredClone(keys == null ? data : Object.fromEntries(keys.filter(k => k in data).map(k => [k, data[k]]))),
             set: async values => {
                 window.fixtureStorageWrites.push({name, values: structuredClone(values)});
                 const changes = {};
                 for (const [key, value] of Object.entries(values)) {
-                    if (JSON.stringify(data[key]) !== JSON.stringify(value)) changes[key] = {oldValue: data[key], newValue: value};
+                    if (JSON.stringify(data[key]) !== JSON.stringify(value)) {changes[key] = {oldValue: data[key], newValue: value};}
                     data[key] = structuredClone(value);
                 }
                 persist(); emit(changes, name);
@@ -33,7 +36,7 @@ export default async function profileBrowserSmoke(page, files) {
             remove: async keys => {
                 const changes = {};
                 for (const key of Array.isArray(keys) ? keys : [keys]) {
-                    if (key in data) changes[key] = {oldValue: data[key]};
+                    if (key in data) {changes[key] = {oldValue: data[key]};}
                     delete data[key];
                 }
                 persist(); emit(changes, name);
@@ -46,13 +49,14 @@ export default async function profileBrowserSmoke(page, files) {
             runtime: {id: 'fixture-extension', getURL: name => `https://auth-companion.test/${name}`,
                 onInstalled: {addListener() {}}, onStartup: {addListener() {}}, onMessage: {addListener: fn => { handler = fn; }},
                 sendMessage: async message => {
-                    background ||= import('/background.js'); await background;
+                    background ||= import('./background.js'); await background;
                     return new Promise(resolve => handler(message, {id: 'fixture-extension', url: location.href}, resolve));
                 }
             }
         };
-        window.sendFrom = async (sender, message = {type: 'credentials', action: 'status'}) => {
-            background ||= import('/background.js'); await background;
+        window.sendFrom = async (sender, message) => {
+            message ??= {type: 'credentials', action: 'status'};
+            background ||= import('./background.js'); await background;
             return new Promise(resolve => handler(message, sender, resolve));
         };
     });
@@ -67,11 +71,11 @@ export default async function profileBrowserSmoke(page, files) {
         const request=route.request(),path=new URL(request.url()).pathname,client=request.headers()['x-api-key'];
         calls.push({path,client,token:request.headers().authorization,method:request.method()});
         const send=body=>route.fulfill({contentType:'application/json',body:JSON.stringify(body)}).catch(()=>{});
-        if(path.endsWith('/environments'))return send({_embedded:{environments:[{id:'1',name:client,type:'dev',status:'ready'}]}});
-        if(path.endsWith('/pipelines'))return send({_embedded:{pipelines:[{id:'10',name:`pipeline-${client}`,type:'CI_CD',status:'IDLE',phases:[{type:'DEPLOY',environmentId:'1'}]}]}});
+        if(path.endsWith('/environments')){return send({_embedded:{environments:[{id:'1',name:client,type:'dev',status:'ready'}]}});}
+        if(path.endsWith('/pipelines')){return send({_embedded:{pipelines:[{id:'10',name:`pipeline-${client}`,type:'CI_CD',status:'IDLE',phases:[{type:'DEPLOY',environmentId:'1'}]}]}});}
         if(path.endsWith('/variables')){
-            if(request.method()==='PATCH'){if(heldMutation)await heldMutation;return send({_embedded:{variables:[]}});}
-            if(heldRead && client==='fixture-client')await heldRead;
+            if(request.method()==='PATCH'){if(heldMutation){await heldMutation;}return send({_embedded:{variables:[]}});}
+            if(heldRead && client==='fixture-client'){await heldRead;}
             return send({_embedded:{variables:[{name:'EXAMPLE',value:`server-${client}`,service:'author',type:'string',status:'ready'}]}});
         }
         return send({});
@@ -85,10 +89,10 @@ export default async function profileBrowserSmoke(page, files) {
     check((await page.locator('#feedback').innerText()).includes('Connected'),'migrated first program connects');
     await click('addProfile');const second=await page.locator('#programProfile').inputValue();
     check(first!==second,'new program gets a stable distinct identity');
-    for(const id of ['clientId','orgId','programId','clientSecret','oauthScopes','token'])check(await page.locator(`#${id}`).inputValue()==='',`new profile ${id} starts empty`);
+    for(const id of ['clientId','orgId','programId','clientSecret','oauthScopes','token']){check(await page.locator(`#${id}`).inputValue()==='',`new profile ${id} starts empty`);} // NOSONAR: Reading and editing this shared form must remain sequential.
     check((await page.locator('#vaultStatus').innerText()).includes('No secret'),'new profile does not inherit saved credentials');
     await page.locator('#profileName').fill('Production');await click('renameProfile');
-    for(const [id,value] of Object.entries({clientId:'second-client',orgId:'second-org',programId:'1',oauthScopes:'fixture-scope',clientSecret:'fixture-secret'}))await page.locator(`#${id}`).fill(value);
+    for(const [id,value] of Object.entries({clientId:'second-client',orgId:'second-org',programId:'1',oauthScopes:'fixture-scope',clientSecret:'fixture-secret'})){await page.locator(`#${id}`).fill(value);} // NOSONAR: Reading and editing this shared form must remain sequential.
     await page.locator('#rememberSecret').check();await click('connect');
     check((await page.locator('#feedback').innerText()).includes('Connected'),'second program connects with independent credentials');
     check(await page.evaluate(()=>fixtureLocal.connectionProfiles.profiles.every(p=>p.credentialVault?.version===2)),'both saved credentials remain present');
@@ -135,12 +139,12 @@ export default async function profileBrowserSmoke(page, files) {
     await value().evaluate(input=>{input.value='second-write';input.dispatchEvent(new Event('input',{bubbles:true}));});
     const mutationCount=calls.filter(call=>call.method==='PATCH').length;
     page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:/Save.*change/}).click();
-    while(calls.filter(call=>call.method==='PATCH').length===mutationCount)await page.waitForTimeout(10);
+    while(calls.filter(call=>call.method==='PATCH').length===mutationCount){await page.waitForTimeout(10);} // NOSONAR: These steps share mutable browser state and must run in order.
     await page.evaluate(id=>chrome.runtime.sendMessage({type:'credentials',action:'selectProfile',profileId:id}),first);
     releaseMutation();heldMutation=null;await ready();
     await page.waitForFunction(id=>document.querySelector('#programProfile').value===id && !document.querySelector('#refresh').disabled,first);
     check(await value().inputValue()==='draft-first','external profile switch reloads after an in-flight mutation finishes');
-    check(calls.filter(call=>call.method==='PATCH').at(-1).client==='second-client','in-flight mutation stays bound to its original profile');
+    check(calls.findLast(call=>call.method==='PATCH').client==='second-client','in-flight mutation stays bound to its original profile');
     await page.locator('#programProfile').selectOption(second);await ready();
     check(calls.every(call=>call.token?.includes(call.client)),'every Adobe request uses the intended profile token');
     await page.goto('https://auth-companion.test/options.html');await ready();

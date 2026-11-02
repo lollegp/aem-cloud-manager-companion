@@ -11,7 +11,7 @@ function fixture(saved, {failSave = false, failLoad = false} = {}) {
     const context = {
         document: {documentElement: root, readyState: 'complete', getElementById: id => id === 'themePreference' ? select : id === 'themeFeedback' ? feedback : null},
         chrome: {storage: {
-            local: {get: async () => {if(failLoad)throw new Error('Unavailable');return {appearanceTheme: saved};}, set: async value => {if(failSave)throw new Error('Unavailable');changes.push(value);}},
+            local: {get: async () => {if(failLoad){throw new Error('Unavailable');}return {appearanceTheme: saved};}, set: async value => {if(failSave){throw new Error('Unavailable');}changes.push(value);}},
             onChanged: {addListener: listener => {storageChanged = listener;}}
         }}
     };

@@ -6,15 +6,15 @@ import {embedded, link, safeAPIPath} from '../api.js';
 
 // Exercise the popup's actual loader without requiring a DOM or real credentials.
 const source = await readFile(new URL('../popup.js', import.meta.url), 'utf8');
-const loader = source.slice(source.indexOf('async function listAll('), source.indexOf('async function loadEnvironmentPreferences('));
+const loader = source.slice(source.indexOf('function appendUniquePage('), source.indexOf('async function loadEnvironmentPreferences('));
 function fixture(responses) {
     const paths = [];
     const context = {embedded, link, safeAPIPath, URL, setMessage() {}, request: async path => {
         paths.push(path);
-        if (paths.length > responses.length) throw new Error('Unexpected extra page request');
+        if (paths.length > responses.length) {throw new Error('Unexpected extra page request');}
         return responses[paths.length - 1];
     }};
-    const list = vm.runInNewContext(`(${loader.trim()})`, context);
+    const list = vm.runInNewContext(`${loader}\nlistAll`, context);
     return {paths, run: () => list('/api/program/1/pipelines', 'pipelines')};
 }
 const page = (ids, next, total) => ({_embedded: {pipelines: ids.map(id => ({id}))},

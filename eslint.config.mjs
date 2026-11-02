@@ -21,6 +21,14 @@ export default [
             'eqeqeq': ['error', 'always', {null: 'ignore'}],
             'no-var': 'error',
             'prefer-const': 'error',
+            'curly': ['error', 'all'],
+            'no-duplicate-imports': 'error',
+            'no-else-return': 'error',
+            'no-lonely-if': 'error',
+            'no-self-compare': 'error',
+            'no-unneeded-ternary': 'error',
+            'no-useless-assignment': 'error',
+            'no-useless-return': 'error',
             'no-unused-vars': ['error', {argsIgnorePattern: '^_', caughtErrors: 'none'}]
         }
     },

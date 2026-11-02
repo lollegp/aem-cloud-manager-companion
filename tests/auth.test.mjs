@@ -145,7 +145,7 @@ test('request timeout covers headers and response body without replaying mutatio
                 calls++;
                 assert.ok(options.signal instanceof AbortSignal);
                 const timeout = () => { throw new DOMException('Timed out', 'TimeoutError'); };
-                if (stage === 'headers') timeout();
+                if (stage === 'headers') {timeout();}
                 return {ok: true, status: 200, text: async () => timeout()};
             };
             await assert.rejects(request('/api/program/1/pipeline/1/execution', 'PUT'), /timed out.*check its state/);
