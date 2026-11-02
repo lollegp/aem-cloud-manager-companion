@@ -64,6 +64,11 @@ Secret entries use `"type": "secretString"`. Missing or empty secret values pres
 
 
 ## Features
+
+Use the **Adobe links** menu in the popup header to open Cloud Manager or the selected program's environment list. Pipeline cards and execution history link to the exact execution. Click an environment name in **Environments** to open its Adobe details; pipeline groups and the Variables view also provide environment links. Links open in a new tab using the selected profile's organization and program; Adobe sign-in and access permissions still apply.
+
+Bulk pipeline controls identify their environment scope. Matching live execution and pipeline statuses appear once, while historical and stale statuses remain labeled separately. The variable editor shares column headings on wide layouts and restores per-field labels on narrow layouts. Settings group connection fields and place profile maintenance under **Manage programs**.
+
 * Pagination stops at the reported total or an empty page, deduplicates overlapping results, and rejects pages that repeat records without progress.
 * Pipeline listing, start, execution states, cancel running steps, approve/reject waiting Go Live approval steps.
 * Environment status dashboard with browser-local aliases, scoped to connection profile, organization, program, and environment.

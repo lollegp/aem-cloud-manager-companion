@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = 'manifest.json'
 RUNTIME = {
     MANIFEST, 'background.js', 'credentials.js', 'vault.js', 'auth.js',
-    'api.js', 'options.html', 'options.js', 'popup.html', 'popup.js', 'pipeline.js',
+    'api.js', 'options.html', 'options.js', 'popup.html', 'popup.js', 'pipeline.js', 'cloud-manager-links.js',
     'jobs.js', 'operations.js', 'request-queue.js', 'history.js', 'cache.js', 'variables.js', 'profiles.js', 'theme.js', 'style.css', 'privacy.html',
 }
 

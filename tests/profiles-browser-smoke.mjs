@@ -84,9 +84,11 @@ export default async function profileBrowserSmoke(page, files) {
     const click=async id=>{await page.locator(`#${id}`).click();await ready();};
     await page.goto('https://auth-companion.test/reset');await page.evaluate(()=>{localStorage.clear();sessionStorage.clear();});
     await page.goto('https://auth-companion.test/options.html');await ready();
+    check(!await page.locator('#profileName').isVisible(),'profile maintenance is collapsed during connection setup');
     const first=await page.locator('#programProfile').inputValue();
     await page.locator('#rememberSecret').check();await click('connect');
     check((await page.locator('#feedback').innerText()).includes('Connected'),'migrated first program connects');
+    await page.getByText('Manage programs',{exact:true}).click();
     await click('addProfile');const second=await page.locator('#programProfile').inputValue();
     check(first!==second,'new program gets a stable distinct identity');
     for(const id of ['clientId','orgId','programId','clientSecret','oauthScopes','token']){check(await page.locator(`#${id}`).inputValue()==='',`new profile ${id} starts empty`);} // NOSONAR: Reading and editing this shared form must remain sequential.
@@ -135,6 +137,7 @@ export default async function profileBrowserSmoke(page, files) {
     await page.waitForFunction(()=>document.querySelector('#programProfile').disabled);
     check(await page.locator('#programProfile').isDisabled(),'switching is disabled while a variable mutation is pending');
     releaseMutation();heldMutation=null;await ready();
+    await page.waitForFunction(()=>!document.querySelector('.variable-value-field textarea').disabled);
     heldMutation=new Promise(resolve=>{releaseMutation=resolve;});
     await value().evaluate(input=>{input.value='second-write';input.dispatchEvent(new Event('input',{bubbles:true}));});
     const mutationCount=calls.filter(call=>call.method==='PATCH').length;
@@ -151,6 +154,7 @@ export default async function profileBrowserSmoke(page, files) {
     await page.locator('#clientId').fill('unsaved-client');
     page.once('dialog',dialog=>dialog.dismiss());await page.locator('#programProfile').selectOption(first);
     check(await page.locator('#programProfile').inputValue()===second && await page.locator('#clientId').inputValue()==='unsaved-client','canceling settings switch preserves unsaved fields');
+    await page.getByText('Manage programs',{exact:true}).click();
     await page.locator('#profileName').fill('Renamed production');await click('renameProfile');
     check(await page.locator('#clientId').inputValue()==='unsaved-client','renaming never discards unsaved credentials');
     page.once('dialog',dialog=>dialog.accept());await click('deleteProfile');

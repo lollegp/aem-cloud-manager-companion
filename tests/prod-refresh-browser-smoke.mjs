@@ -35,7 +35,9 @@ export default async function prodRefreshBrowserSmoke(page,files) {
     await page.goto('https://prod-refresh.test/popup.html');await ready();
     await prod.locator(':scope > .environment-summary').click();await ready();
     check((await prod.locator('.execution-status').innerText()).endsWith('Running'),'production ribbon initially shows Running');
-    check(await prod.locator('.pipeline-row > .line > .pill').isVisible(),'pipeline availability ribbon stays visible alongside last execution');
+    check(!await prod.locator('.pipeline-row > .line > .pill').isVisible(),'matching live execution and pipeline status appear once');
+    check(await prod.locator('.execution-status').innerText()==='Running','live status has no redundant last-execution prefix');
+    check((await prod.locator('.group-heading').innerText()).includes('Bulk actions · this environment'),'environment action scope is explicit');
     await prod.locator(':scope > .environment-summary').click();stage=1;
     await prod.locator(':scope > .environment-summary').click();await ready();
     check((await prod.locator('.execution-status').innerText()).endsWith('Waiting'),'reopening production fetches detail and changes last execution ribbon to Waiting');
@@ -67,6 +69,7 @@ export default async function prodRefreshBrowserSmoke(page,files) {
     await prod.locator(':scope > .environment-summary').click();stage=3;
     await prod.locator(':scope > .environment-summary').click();await ready();
     check((await prod.locator('.execution-status').innerText()).endsWith('Failed'),'production discovers a newer failed execution without opening history');
+    check(await prod.locator('.pipeline-row > .line > .pill').isVisible(),'historical execution retains separate current availability');
     check(calls.filter(path=>path.endsWith('/executions')).length===1,'missing current reads one latest summary only');
     check(await prod.getByRole('button',{name:'Approve deployment',exact:true}).count()===0,'historical summary exposes no production approval');
     await page.reload();await ready();

@@ -47,7 +47,12 @@ export default async function usabilitySmoke(page,files) {
     const tab=async name=>{await page.getByRole('button',{name,exact:true}).click();await ready();};
     const group=name=>page.locator('.environment-group').filter({has:page.locator('.environment-summary').filter({hasText:name})});
     await page.goto('https://environment-update.test/popup.html');await ready();
+    check(!await page.locator('#cloudManagerLinks').isVisible(),'external links do not consume a header row');
+    await page.getByText('Adobe links',{exact:true}).focus();await page.keyboard.press('Enter');
+    check(await page.getByRole('link',{name:'Open Cloud Manager',exact:true}).isVisible(),'Adobe links open with the keyboard');
+    await page.keyboard.press('Enter');
     await tab('Variables');
+    check(await page.locator('.variable-columns').isVisible(),'wide editor shares column headings');
     check(await page.getByLabel('Value for RUNMODES').isVisible(),'existing variable value is visible without expansion');
     const variableRow=page.locator('.variable-row').first();
     check(await variableRow.locator('.variable-fields').evaluate(fields=>{const boxes=[...fields.children].map(field=>field.getBoundingClientRect());return boxes.every(box=>Math.abs(box.top-boxes[0].top)<1);}), 'name value and service share one row');
@@ -121,7 +126,8 @@ export default async function usabilitySmoke(page,files) {
     await page.getByRole('searchbox',{name:'Search variables'}).fill('');
     for(const width of [600,380]){
         await page.setViewportSize({width,height:720}); // NOSONAR: Each assertion must use its own viewport.
-        check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`inline editor fits ${width}px without horizontal overflow`); // NOSONAR: Check the viewport before changing it.
+        check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`inline editor fits ${width}px without horizontal overflow`);
+        check(await page.locator('.variable-columns').isVisible()===(width>420),`variable headings adapt at ${width}px`); // NOSONAR: Check the viewport before changing it.
     }
     await page.setViewportSize({width:800,height:900});
     await tab('Pipelines');
@@ -134,9 +140,13 @@ export default async function usabilitySmoke(page,files) {
     check(calls.filter(path=>path.endsWith('/environments')).length===beforeExpansion+1,'overlapping expansions share one environment list request');
     release();heldEnvironmentRead=null;await ready();
     const before=calls.length;await tab('Environments');const afterRead=calls.length;
+    const environmentLink=page.locator('.card[data-environment-id="1"] > .line > strong > a');
+    check(await environmentLink.innerText()==='Development'&&(await environmentLink.getAttribute('href')).endsWith('/environment/1'),'environment name links directly to its Adobe page');
+    check(await page.getByRole('link',{name:'Environment details',exact:true}).count()===0,'environment cards omit the separate details link');
     await page.getByLabel('Alias for Development').fill('DEV');
     await page.getByRole('button',{name:'Save alias'}).first().click();await ready();
     check(calls.length===afterRead,'saving alias makes no API requests');
+    check(await environmentLink.innerText()==='DEV · Development','clickable environment name reflects saved alias');
     check(afterRead>before,'environment tab still refreshes status');
     heldEnvironmentRead=new Promise(resolve=>release=resolve);
     await page.getByRole('button',{name:'Variables',exact:true}).click();

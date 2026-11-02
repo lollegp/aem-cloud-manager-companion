@@ -111,6 +111,10 @@ export default async function browserSmoke(page, files) {
     await firstHistory.locator('summary').click();
     await page.waitForFunction(() => document.querySelector('.history-list .history-entry'));
     assert(historyRequests === 1, 'opening history loads only its first page');
+    const historyPipeline=await firstHistory.locator('..').getAttribute('data-pipeline-id');
+    const historyLink=firstHistory.locator('.history-entry a').first();
+    assert((await historyLink.getAttribute('href')).endsWith(`/pipeline/${historyPipeline}/execution/0`),'history link targets its exact pipeline and execution');
+    assert(await historyLink.getAttribute('target')==='_blank'&&await historyLink.getAttribute('rel')==='noopener noreferrer','history links open safely in a separate tab');
     await firstHistory.locator('.history-list').evaluate(el => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event('scroll')); });
     await page.waitForFunction(() => document.querySelectorAll('.history-list .history-entry').length === 40);
     assert(historyRequests === 2, 'scroll loads one additional history page');

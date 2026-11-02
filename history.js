@@ -30,7 +30,7 @@ export function createHistoryPager(path, fetchPage = request) {
     };
 }
 
-export function historyPanel(path, signal, onLatest, onLoading) {
+export function historyPanel(path, signal, onLatest, onLoading, executionLink) {
     const panel = document.createElement('details');
     panel.className = 'pipeline-history';
     const summary = document.createElement('summary');
@@ -66,7 +66,9 @@ export function historyPanel(path, signal, onLatest, onLoading) {
                 date.className = 'muted';
                 const time = entry.createdAt || entry.startedAt;
                 date.textContent = time ? `Started: ${time}` : 'Start time unavailable';
-                row.append(title, date); rows.append(row);
+                row.append(title, date);
+                if (executionLink) {row.append(executionLink(entry));}
+                rows.append(row);
             }
             status.textContent = 'Scroll for older executions';
             if (pager.done) { status.textContent = rows.childElementCount ? 'End of history' : 'No executions found.'; }

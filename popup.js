@@ -2,6 +2,7 @@ import {submitOperation,pendingVariableState} from './operations.js';
 import {profileCommand, fillProfileSelect, PROFILE_KEY, profilePrefix, saveProfilePreference} from './profiles.js';
 import {loadSnapshot, saveSnapshot, snapshotKey, projectPipeline, projectExecution} from './cache.js';
 import {historyPanel} from './history.js';
+import {cloudManagerLink} from './cloud-manager-links.js';
 import {request, settings, abortable, pathFor, embedded, link, safeAPIPath, usesBackground} from './api.js';
 import {buildVariablePatch, variableUpdateState, environmentBlocksStart, exportVariables, mergeVariableImport, variableDraftKey, loadVariableDraft, saveVariableDraft} from './variables.js';
 import {aliasKey, environmentIds, groupPipelines, pipelineKind, stopAction, canStopPipeline, approvalAction, orderEnvironments, executionStatusLabel, pipelineStatusLabel} from './pipeline.js';
@@ -165,7 +166,7 @@ function variableStatusRibbon(status) {
     return ribbon;
 }
 
-function executionRibbon(execution, stale = false) {
+function executionRibbon(execution, stale = false, historical = false) {
     const label = executionStatusLabel(execution);
     const status = pill(execution.status);
     status.classList.add('execution-status');
@@ -173,7 +174,7 @@ function executionRibbon(execution, stale = false) {
         status.classList.remove('running');
         status.classList.add('waiting');
     }
-    status.textContent = `${stale ? 'Last observed' : 'Last execution'} · ${label}`;
+    status.textContent = stale || historical ? `${stale ? 'Last observed' : 'Last execution'} · ${label}` : label;
     const approval = (execution._embedded?.stepStates || []).some(step => step.status === 'WAITING' && step.action === 'approval');
     status.title = `Adobe execution status: ${execution.status || 'UNKNOWN'}${approval && label === 'Waiting' ? ' · Approval or rejection required' : ''}`;
     return status;
@@ -459,6 +460,8 @@ async function refreshView(signal, force) {
     }
     snapshotIdentity = identity;
     connection = s;
+    $('cloudManagerLinks').replaceChildren();
+    if (s.programId) {$('cloudManagerLinks').append(cloudManagerLink(s,'Open Cloud Manager'),cloudManagerLink(s,'Open environments',{section:'environments'}));}
     if(s.profileId){$('programProfile').value=s.profileId;}
     connectionChanged = false;
     $('environment').classList.toggle('hidden', tab !== 'variables' || !environments.length);
@@ -840,7 +843,8 @@ function renderGroupBody(state,pid,renderRows = true) {
     state.body.replaceChildren();
     group.approvals = new Map(); group.executions = new Map();
     const heading = node('div','','group-heading');
-    heading.append(node('small','Environment actions'));
+    if (group.environment) {heading.append(cloudManagerLink(connection,'Environment details',{environmentId:group.environment.id}));}
+    heading.append(node('small','Bulk actions · this environment'));
     const controls = node('div','','actions environment-actions');
     const start = actionButton('Start',() => groupAction(pid,group,'start'),'start');
     start.setAttribute('aria-label','Start eligible pipelines');start.title='Start eligible pipelines in this environment';
@@ -921,7 +925,8 @@ function renderExecutionInfo(pid, group, p, metadata) {
         const {execution, historical} = record || {};
         if (execution?.id) {
             if (!historical) {group.executions.set(String(p.id), execution.id);}
-            executionInfo.append(executionRibbon(execution,record?.stale));
+            executionInfo.append(executionRibbon(execution,record?.stale,historical));
+            executionInfo.append(cloudManagerLink(connection,'Open execution',{pipelineId:p.id,executionId:execution.id}));
             metadata.append(node('p', `${historical ? 'Last execution' : 'Execution'} ${execution.id}`, 'muted execution-reference'));
             executionInfo.append(executionTimestamp(execution.startedAt || execution.createdAt));
             if (!historical) { appendExecutionSteps(execution, pid, group, p, executionInfo); }
@@ -945,8 +950,9 @@ async function showLatestExecution(state, p, executionInfo, latest) {
     const info = state.rows?.get(String(p.id))?.querySelector('.execution-info') || executionInfo;
     info.replaceChildren();
     if (latest) {
-        const status = executionRibbon(latest);
+        const status = executionRibbon(latest,false,true);
         info.append(status, executionTimestamp(latest.startedAt || latest.createdAt));
+        info.append(cloudManagerLink(connection,'Open execution',{pipelineId:p.id,executionId:latest.id}));
         const currentCard = info.closest('.pipeline-row');
         if (currentCard) {
             currentCard.querySelector(':scope > .line > .pill').hidden = false;
@@ -981,14 +987,14 @@ function renderPipelineCard(state,pid,p) {
     const liveExecution = record?.historical || record?.stale ? null : record?.execution;
     const pipelineLabel = pipelineStatusLabel(p,liveExecution,isProduction(group.environment));
     const pipelinePill = c.querySelector(':scope > .line > .pill');
-    pipelinePill.textContent = `Current: ${pipelineLabel}`;
+    pipelinePill.textContent = pipelineLabel;
     pipelinePill.title = `Adobe pipeline status: ${p.status || 'UNKNOWN'}${pipelineLabel === 'Waiting' ? ' · Check execution details for the pending decision' : ''}`;
     if (pipelineLabel === 'Waiting') { pipelinePill.classList.remove('busy'); pipelinePill.classList.add('waiting'); }
     const kind = pipelineKind(p);
     const typeRow = node('div', '', 'pipeline-type-row');
     typeRow.append(typeRibbon(kind));
     c.append(typeRow);
-    pipelinePill.hidden = false;
+    pipelinePill.hidden = !!liveExecution && executionStatusLabel(liveExecution) === pipelineLabel;
     metadata.append(node('p', `Pipeline availability: ${pipelineLabel}`, 'muted'));
     if (environmentIds(p).length > 1) {c.append(node('p', `Shared pipeline · ${targetLabels(p).join(', ')}`, 'muted'));}
     if (p.detailsError) {c.append(node('p', `Environment details unavailable: ${p.detailsError}`, 'error'));}
@@ -1001,7 +1007,8 @@ function renderPipelineCard(state,pid,p) {
         actions.append(start);
     }
     const executionInfo = renderExecutionInfo(pid, group, p, metadata);
-    c.append(executionInfo, actions, metadata, historyPanel(base + '/executions?start=0&limit=20', historyController.signal, latest => showLatestExecution(state, p, executionInfo, latest), loading => setCardBusy(state.rows?.get(String(p.id)) || c,'history',loading)));
+    const linkConfig = connection;
+    c.append(executionInfo, actions, metadata, historyPanel(base + '/executions?start=0&limit=20', historyController.signal, latest => showLatestExecution(state, p, executionInfo, latest), loading => setCardBusy(state.rows?.get(String(p.id)) || c,'history',loading), entry => cloudManagerLink(linkConfig,'Open execution',{pipelineId:p.id,executionId:entry.id})));
     setCardBusy(c,'pipeline',pipelineReads.has(String(p.id)) || activePipelineActions.has(String(p.id)));
     if (state.loading) {
         for (const control of c.querySelectorAll('button,input,select')) {
@@ -1022,6 +1029,7 @@ function renderEnvironments() {
         const c = card(environmentLabel(env), env.variableUpdateStatus || env.status);
         c.dataset.environmentId=String(env.id);
         c.append(environmentOrderControls(env));
+        c.querySelector(':scope > .line > strong').replaceChildren(cloudManagerLink(connection,environmentLabel(env),{environmentId:env.id}));
         c.append(node('p', `Type: ${env.type || 'N/A'} · Region: ${env.region || 'N/A'} · ID: ${env.id}`, 'muted'));
         const key = profilePrefix(connection.profileId)+aliasKey(connection.orgId, connection.programId, env.id);
         const alias = node('input');
@@ -1078,6 +1086,7 @@ async function renderVariables(pid, signal, loadedVariables) {
     const vars=draft?.original || freshVariables;
     content.replaceChildren();
     const environment=environments.find(env=>String(env.id)===selectedEnvironment);
+    content.append(cloudManagerLink(connection,'Environment details',{environmentId:selectedEnvironment}));
     const updating=environment.variableUpdateStatus === 'updating' || String(environment.status).toLowerCase()==='updating';
     const failed=environment.variableUpdateStatus === 'failed';
     const notice=node('div','','variable-update-notice');notice.setAttribute('role','status');
@@ -1270,7 +1279,9 @@ async function renderVariables(pid, signal, loadedVariables) {
     importButton.title='Merge JSON into this draft by name and service. Save is always manual.';
     exportButton.title='Export loaded saved variables without secret values or unsaved edits.';
     actions.append(importButton,exportButton,draftStatus,fileInput);
-    editor.append(actions,filters,resultStatus,list,empty);
+    const columns=node('div','','variable-columns');columns.setAttribute('aria-hidden','true');
+    columns.append(node('span','Name'),node('span','Value'),node('span','Service'));
+    editor.append(actions,filters,resultStatus,columns,list,empty);
     content.append(editor);remember(false);
     await persistSnapshot(signal);
     scheduleEnvironmentPoll();
