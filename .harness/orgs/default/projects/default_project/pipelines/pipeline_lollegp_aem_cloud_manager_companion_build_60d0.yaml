@@ -1,0 +1,53 @@
+pipeline:
+  id: pipeline_lollegp_aem_cloud_manager_companion_build_60d0
+  name: pipeline_lollegp_aem_cloud_manager_companion_build_60d0
+  stages:
+    - name: Build and Test
+      clone:
+        enabled: true
+      cache:
+        enabled: true
+      runtime: cloud
+      platform:
+        os: linux
+        arch: amd64
+      steps:
+        - name: Install Dependencies
+          id: install
+          run:
+            shell: bash
+            container:
+              image: node:22-slim
+            script: npm ci
+        - name: Lint
+          id: lint
+          run:
+            shell: bash
+            container:
+              image: node:22-slim
+            script: npm run lint
+        - name: Test
+          id: test
+          run:
+            shell: bash
+            container:
+              image: node:22-slim
+            script: |-
+              mkdir -p .harness/reports
+              node --test \
+                --test-reporter=spec --test-reporter-destination=stdout \
+                --test-reporter=junit --test-reporter-destination=.harness/reports/junit.xml \
+                tests/*.test.mjs
+            report:
+              type: junit
+              paths:
+                - .harness/reports/junit.xml
+        - name: Site Check
+          id: site_check
+          run:
+            shell: bash
+            container:
+              image: node:22-slim
+            script: npm run site:check
+  tags:
+    onboarding: "true"
